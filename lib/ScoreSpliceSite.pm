@@ -10,6 +10,8 @@ my $data_dir = "$RealBin/data/species";
 my %matrices = ();
 my %min_scores = ();#min scores for each matrix
 my %max_scores = ();#max scores for each matrix
+my %best_seqs = ();
+my %worst_seqs = ();
 my @species = qw
 (
     10090
@@ -37,8 +39,12 @@ foreach my $s (@species){
             my $f = "$s_dir/$pwm.matrix";
             next if $int =~ /U12$/ and $s == 6239;
             $matrices{$s}->{$int}->{$pwm} = _readLogoFile($f);
-            ($min_scores{$s}->{$int}->{$pwm}, $max_scores{$s}->{$int}->{$pwm}) = 
-                matrixMinMax($matrices{$s}->{$int}->{$pwm}); 
+            (
+            $min_scores{$s}->{$int}->{$pwm}, 
+            $max_scores{$s}->{$int}->{$pwm}, 
+            $worst_seqs{$s}->{$int}->{$pwm}, 
+            $best_seqs{$s}->{$int}->{$pwm}, 
+            ) = matrixMinMax($matrices{$s}->{$int}->{$pwm}); 
         }
 =cut
         if ($int =~ /U12$/){
@@ -109,12 +115,24 @@ sub score{
 sub matrixMinMax{
     my $m = shift;
     my ($minscore, $maxscore) = 0, 0;
+    my $best;
+    my $worst;
     for (my $i = 0; $i < @$m; $i++){
         my $max = 0;
-        my $min = 0;
-        foreach my $k (keys %{$m->[$i]}){
-            $max = $max >= $m->[$i]->{$k} ? $max : $m->[$i]->{$k};
-            $min = $min <= $m->[$i]->{$k} ? $min : $m->[$i]->{$k};
+        my $min = 1;
+        my $best_nt = 'A'; 
+        my $worst_nt = 'A'; 
+        foreach my $k (keys %{$m->[$i]}){   
+            if ($max < $m->[$i]->{$k}){
+                $best_nt = $k;
+                $max = $m->[$i]->{$k};
+            }
+            if ($min > $m->[$i]->{$k}){
+                $worst_nt = $k;
+                $min = $m->[$i]->{$k};
+            }
+            #$max = $max >= $m->[$i]->{$k} ? $max : $m->[$i]->{$k};
+            #$min = $min <= $m->[$i]->{$k} ? $min : $m->[$i]->{$k};
         }
         my $minp = $min/0.25; 
         $minp ||= 0.0001; 
@@ -122,8 +140,10 @@ sub matrixMinMax{
         my $maxp = $max/0.25; 
         $maxp ||= 0.0001; 
         $maxscore += log($maxp);
+        $best .= $best_nt;
+        $worst .= $worst_nt;
     }
-    return $minscore, $maxscore;
+    return $minscore, $maxscore, $worst, $best;
 }
         
 
