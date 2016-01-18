@@ -8,6 +8,8 @@ use FindBin qw($RealBin);
 my $data_dir = "$RealBin/data/species";
 
 my %matrices = ();
+my %min_scores = ();#min scores for each matrix
+my %max_scores = ();#max scores for each matrix
 my @species = qw
 (
     10090
@@ -31,13 +33,19 @@ foreach my $s (@species){
             croak "Could not find splice data directory '$s_dir' ";
         }
         foreach my $pwm (qw / A D / ){ 
-            my $f = "$s_dir/$pwm"."_logo";
+            #my $f = "$s_dir/$pwm"."_logo";
+            my $f = "$s_dir/$pwm.matrix";
+            next if $int =~ /U12$/ and $s == 6239;
             $matrices{$s}->{$int}->{$pwm} = _readLogoFile($f);
+            ($min_scores{$s}->{$int}->{$pwm}, $max_scores{$s}->{$int}->{$pwm}) = 
+                matrixMinMax($matrices{$s}->{$int}->{$pwm}); 
         }
+=cut
         if ($int =~ /U12$/){
             my $f = "$s_dir/B_logo";
             $matrices{$s}->{$int}->{B} = _readLogoFile($f);
         }
+=cut
     }
 }
 
@@ -64,6 +72,8 @@ sub _readLogoFile{
 }
 
 sub score{
+#acceptor splites require 12 upstream, the splice site (2nt) and 3 downstream
+#donor splites require 3 upstream (exonic), the splice site (2nt) and 8 downstream
     my %args = @_;
     my $score = 0;
     foreach my $r (qw / seq species type site / ){ 
@@ -76,13 +86,18 @@ sub score{
         carp "Sequence '$args{seq}' is too short (< $l) to score ";
         return ;
     }
-    my ($min, $max) = matrixMinMax($m); 
+    my $min = $min_scores{$args{species}}->{$args{type}}->{$args{site}};
+    my $max = $max_scores{$args{species}}->{$args{type}}->{$args{site}};
     for (my $i = 0; $i < @$m; $i++){
         my $n = uc (substr($args{seq}, $i, 1) );
         my $p = $m->[$i]->{$n}/0.25; 
         $p ||= 0.0001; 
-        $score += log($p)/log(2);
+        $score += log($p);
     }
+#'A score close to 50 means the background model is favored, a score close 
+#to 100 favors the splice-site motif in question, and a score close to 0 
+#implies that the splice site is different from both the background and 
+#the splice-site distribution' doi: 10.1093/nar/gkl556
     if ($score < 0){
         return 50 - (50 * $score / $min) ;
     }else{
@@ -103,10 +118,10 @@ sub matrixMinMax{
         }
         my $minp = $min/0.25; 
         $minp ||= 0.0001; 
-        $minscore += log($minp)/log(2);
+        $minscore += log($minp);
         my $maxp = $max/0.25; 
         $maxp ||= 0.0001; 
-        $maxscore += log($maxp)/log(2);
+        $maxscore += log($maxp);
     }
     return $minscore, $maxscore;
 }
