@@ -96,7 +96,7 @@ sub score{
     my $max = $max_scores{$args{species}}->{$args{type}}->{$args{site}};
     for (my $i = 0; $i < @$m; $i++){
         my $n = uc (substr($args{seq}, $i, 1) );
-        my $p = $m->[$i]->{$n}/0.25; 
+        my $p = exists $m->[$i]->{$n} ? $m->[$i]->{$n}/0.25 : 0; 
         $p ||= 0.0001; 
         $score += log($p);
     }
@@ -146,6 +146,13 @@ sub matrixMinMax{
     return $minscore, $maxscore, $worst, $best;
 }
         
+sub getIntronTypes{
+    return @introns;
+}
+
+sub getSpecies{
+    return @species;
+}
 
 1;
 
