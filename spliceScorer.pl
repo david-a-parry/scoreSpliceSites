@@ -217,12 +217,12 @@ sub writeIntron{
     );
     my ($a_start, $a_end) = sort {$a <=> $b} 
     (
-        ($intron_stop - (13 * $strand)) ,
+        ($intron_stop - (100 * $strand)) ,
         ($intron_stop + (3 * $strand) ) ,
     );
     my $donor    = $fai->fetch("$chrom:$d_start-$d_end");
-    my $acceptor = $fai->fetch("$chrom:$a_start-$a_end");
-
+    my $acc_and_branch = $fai->fetch("$chrom:$a_start-$a_end");
+    my $acceptor = substr($acc_and_branch, 100 - 17,); 
     if ($strand < 0){
         $donor = revcomp($donor);
         $acceptor = revcomp($acceptor);
