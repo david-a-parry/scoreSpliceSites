@@ -34,16 +34,17 @@ foreach my $s (@species){
         if (not -d $s_dir){
             croak "Could not find splice data directory '$s_dir' ";
         }
-        foreach my $pwm (qw / A D / ){ 
+        foreach my $pwm (qw / A D B / ){ 
             #my $f = "$s_dir/$pwm"."_logo";
             my $f = "$s_dir/$pwm.matrix";
             next if $int =~ /U12$/ and $s == 6239;
+            next if $pwm eq 'B' and not -e $f;
             $matrices{$s}->{$int}->{$pwm} = _readLogoFile($f);
             (
-            $min_scores{$s}->{$int}->{$pwm}, 
-            $max_scores{$s}->{$int}->{$pwm}, 
-            $worst_seqs{$s}->{$int}->{$pwm}, 
-            $best_seqs{$s}->{$int}->{$pwm}, 
+                $min_scores{$s}->{$int}->{$pwm}, 
+                $max_scores{$s}->{$int}->{$pwm}, 
+                $worst_seqs{$s}->{$int}->{$pwm}, 
+                $best_seqs{$s}->{$int}->{$pwm}, 
             ) = matrixMinMax($matrices{$s}->{$int}->{$pwm}); 
         }
 =cut
@@ -94,12 +95,7 @@ sub score{
     }
     my $min = $min_scores{$args{species}}->{$args{type}}->{$args{site}};
     my $max = $max_scores{$args{species}}->{$args{type}}->{$args{site}};
-    for (my $i = 0; $i < @$m; $i++){
-        my $n = uc (substr($args{seq}, $i, 1) );
-        my $p = exists $m->[$i]->{$n} ? $m->[$i]->{$n}/0.25 : 0; 
-        $p ||= 0.0001; 
-        $score += log($p);
-    }
+    $score = _scoreSequence($args{seq}, $m);
 #'A score close to 50 means the background model is favored, a score close 
 #to 100 favors the splice-site motif in question, and a score close to 0 
 #implies that the splice site is different from both the background and 
@@ -111,6 +107,47 @@ sub score{
     }
     #return 100 * ($score - $min)/($max - $min);
 }
+
+sub scanForBranchPoint{
+    my %args = @_;
+    my $score = 0;
+    foreach my $r (qw / seq species type / ){ 
+        croak "$r argument is required for scanForBranchPoint method " 
+          if not exists $args{$r};
+    }
+    my $m = $matrices{$args{species}}->{$args{type}}->{B};
+    my $l = @$m;
+    if (length($args{seq})  <  $l){
+        carp "Sequence '$args{seq}' is too short (< $l) to score ";
+        return ;
+    }
+    my $min = $min_scores{$args{species}}->{$args{type}}->{$args{site}};
+    my $max = $max_scores{$args{species}}->{$args{type}}->{$args{site}};
+    my $dummy = '.' x $l;
+    my $best_score = $min;
+    my $best_seq = '';
+    while ($args{seq} =~ /($dummy)/g){
+        my $score = _scoreSequence($1, $m);
+        if ($score >= $best_score){
+            $best_score = $score;
+            $best_seq = $1;
+        }
+    }
+    return $best_score, $best_seq;
+}
+
+sub _scoreSequence{
+    my ($seq, $m) = @_;
+    my $score = 0;
+    for (my $i = 0; $i < @$m; $i++){
+        my $n = uc (substr($seq, $i, 1) );
+        my $p = exists $m->[$i]->{$n} ? $m->[$i]->{$n}/0.25 : 0; 
+        $p ||= 0.0001; 
+        $score += log($p);
+    }
+    return $score;
+}
+
 
 sub matrixMinMax{
     my $m = shift;
