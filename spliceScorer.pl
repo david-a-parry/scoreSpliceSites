@@ -53,6 +53,7 @@ if ($opts{t}){
 }
 
 my %exons = ();
+my %intron_counts = (U12 => 0, U2 => 0, unknown => 0);
 my %transcripts = ();
 my %names = ();
 my $i = 0;
@@ -156,7 +157,15 @@ sub reportProgress{
     return if ($n % 10000); 
     my $time = strftime( "%H:%M:%S", localtime );
     $n =~ s/(\d{1,3}?)(?=(\d{3})+$)/$1,/g; #add commas for readability
-    print STDERR "[$time] processed $n introns\n";
+    my $s = sprintf 
+    (
+        "[$time] processed $n introns - %d U12 introns, %d U2 introns,"
+        . " %d unknown intron types\n",
+        $intron_counts{U12},
+        $intron_counts{U2},
+        $intron_counts{unknown},
+    );
+    print STDERR $s;
 }
 
 #################################################
@@ -289,7 +298,7 @@ sub writeIntron{
     $intron->add_tag_value
     (
         "U2_branch_score",
-        $scores{'B'}->{GT_AG_U2},
+        sprintf("%.2f", $scores{'B'}->{GT_AG_U2}),
     );
     $intron->add_tag_value
     (
@@ -301,12 +310,12 @@ sub writeIntron{
         $intron->add_tag_value
         (
             "donor_score_$type",
-            $scores{'D'}->{$type},
+            sprintf("%.2f", $scores{'D'}->{$type}),
         );
         $intron->add_tag_value
         (
             "acceptor_score_$type",
-            $scores{'A'}->{$type},
+            sprintf("%.2f", $scores{'A'}->{$type}),
         );
         if ($scores{'D'}->{$type} > 50
             #and $scores{'A'}->{$type} > 50
@@ -343,6 +352,15 @@ sub writeIntron{
     $intron->add_tag_value("intron_type", $intron_type); 
     $gffwriter->write_feature($intron);
     $transcripts{$tr}->{$intron_type}++;
+    if ($intron_type){
+        if ($intron_type =~ /U12$/){
+            $intron_counts{U12}++;
+        }else{
+            $intron_counts{U2}++;
+        }
+    }else{
+        $intron_counts{unknown}++;
+    }
 }
 
 #################################################
