@@ -38,7 +38,7 @@ foreach my $s (@species){
             #my $f = "$s_dir/$pwm"."_logo";
             my $f = "$s_dir/$pwm.matrix";
             next if $int =~ /U12$/ and $s == 6239;
-            next if $pwm eq 'B' and not -e $f;
+            next if $pwm eq 'B' and not -e $f;#branch site file not available for every species
             $matrices{$s}->{$int}->{$pwm} = _readLogoFile($f);
             (
                 $min_scores{$s}->{$int}->{$pwm}, 
@@ -95,17 +95,7 @@ sub score{
     }
     my $min = $min_scores{$args{species}}->{$args{type}}->{$args{site}};
     my $max = $max_scores{$args{species}}->{$args{type}}->{$args{site}};
-    $score = _scoreSequence($args{seq}, $m);
-#'A score close to 50 means the background model is favored, a score close 
-#to 100 favors the splice-site motif in question, and a score close to 0 
-#implies that the splice site is different from both the background and 
-#the splice-site distribution' doi: 10.1093/nar/gkl556
-    if ($score < 0){
-        return 50 - (50 * $score / $min) ;
-    }else{
-        return 50 * ($score/$max) + 50;
-    }
-    #return 100 * ($score - $min)/($max - $min);
+    return _scoreSequence($args{seq}, $m, $min, $max);
 }
 
 sub scanForBranchPoint{
@@ -121,23 +111,23 @@ sub scanForBranchPoint{
         carp "Sequence '$args{seq}' is too short (< $l) to score ";
         return ;
     }
-    my $min = $min_scores{$args{species}}->{$args{type}}->{$args{site}};
-    my $max = $max_scores{$args{species}}->{$args{type}}->{$args{site}};
-    my $dummy = '.' x $l;
+    my $min = $min_scores{$args{species}}->{$args{type}}->{'B'};
+    my $max = $max_scores{$args{species}}->{$args{type}}->{'B'};
     my $best_score = $min;
     my $best_seq = '';
-    while ($args{seq} =~ /($dummy)/g){
-        my $score = _scoreSequence($1, $m);
+    for (my $i = 0; $i <= length($args{seq}) - $l; $i++){
+        my $subseq = substr($args{seq}, $i, $l); 
+        my $score = _scoreSequence($subseq, $m, $min, $max);
         if ($score >= $best_score){
             $best_score = $score;
-            $best_seq = $1;
+            $best_seq = $subseq;
         }
     }
     return $best_score, $best_seq;
 }
 
 sub _scoreSequence{
-    my ($seq, $m) = @_;
+    my ($seq, $m, $min, $max) = @_;
     my $score = 0;
     for (my $i = 0; $i < @$m; $i++){
         my $n = uc (substr($seq, $i, 1) );
@@ -145,7 +135,15 @@ sub _scoreSequence{
         $p ||= 0.0001; 
         $score += log($p);
     }
-    return $score;
+#'A score close to 50 means the background model is favored, a score close 
+#to 100 favors the splice-site motif in question, and a score close to 0 
+#implies that the splice site is different from both the background and 
+#the splice-site distribution' doi: 10.1093/nar/gkl556
+    if ($score < 0){
+        return 50 - (50 * $score / $min) ;
+    }else{
+        return 50 * ($score/$max) + 50;
+    }
 }
 
 
