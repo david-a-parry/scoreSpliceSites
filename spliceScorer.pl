@@ -90,7 +90,14 @@ while (my $feat = $gff->next_feature() ) {
 }
 parseExons(\%exons);
 my $time = strftime( "%H:%M:%S", localtime );
-print STDERR "[$time] Finished - processed $i introns\n";
+printf STDERR
+(
+    "[$time] processed $i introns - %d U12 introns, %d U2 introns,"
+    . " %d unknown intron types\nFinished\n",
+    $intron_counts{U12},
+    $intron_counts{U2},
+    $intron_counts{unknown},
+);
 if ($TRANS){
     $time = strftime( "%H:%M:%S", localtime );
     print STDERR "[$time] writing transcript intron counts to $opts{t}...\n";
@@ -157,7 +164,7 @@ sub reportProgress{
     return if ($n % 10000); 
     my $time = strftime( "%H:%M:%S", localtime );
     $n =~ s/(\d{1,3}?)(?=(\d{3})+$)/$1,/g; #add commas for readability
-    my $s = sprintf 
+    printf STDERR
     (
         "[$time] processed $n introns - %d U12 introns, %d U2 introns,"
         . " %d unknown intron types\n",
@@ -165,7 +172,6 @@ sub reportProgress{
         $intron_counts{U2},
         $intron_counts{unknown},
     );
-    print STDERR $s;
 }
 
 #################################################
