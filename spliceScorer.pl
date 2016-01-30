@@ -222,7 +222,8 @@ sub writeIntron{
     );
     my $donor    = $fai->fetch("$chrom:$d_start-$d_end");
     my $acc_and_branch = $fai->fetch("$chrom:$a_start-$a_end");
-    my $acceptor = substr($acc_and_branch, 100 - 17,); 
+    my $acceptor = substr($acc_and_branch, 100 - 13,); 
+    my $branch = substr($acc_and_branch, 0, 92); 
     if ($strand < 0){
         $donor = revcomp($donor);
         $acceptor = revcomp($acceptor);
@@ -241,6 +242,7 @@ sub writeIntron{
     );
     
     my %scores = ();
+    my %branch_seqs = (); 
     foreach my $type (ScoreSpliceSite::getIntronTypes){
         $scores{'D'}->{$type} = ScoreSpliceSite::score
         (
@@ -256,7 +258,44 @@ sub writeIntron{
             site => 'A',
             species => $opts{s},
         );
+        ($scores{'B'}->{$type}, $branch_seqs{$type}) = 
+        ScoreSpliceSite::scanForBranchPoint
+        (
+            seq  => $branch,
+            type => $type,
+            species => $opts{s},
+        );
     }
+    my $u12_b_score;
+    my $u12_b_seq;
+    if ($scores{'B'}->{AT_AC_U12} > $scores{'B'}->{GT_AG_U12}){
+        $u12_b_score = $scores{'B'}->{AT_AC_U12};
+        $u12_b_seq = $branch_seqs{AT_AC_U12};
+    }else{
+        $u12_b_score = $scores{'B'}->{GT_AG_U12};
+        $u12_b_seq = $branch_seqs{GT_AG_U12};
+    }
+    $intron->add_tag_value
+    (
+        "U12_branch_score",
+        $u12_b_score,
+    );
+    $intron->add_tag_value
+    (
+        "U12_branch_best_seq",
+        $u12_b_seq,
+    );
+    
+    $intron->add_tag_value
+    (
+        "U2_branch_score",
+        $scores{'B'}->{GT_AG_U2},
+    );
+    $intron->add_tag_value
+    (
+        "U2_branch_best_seq",
+        $branch_seqs{GT_AG_U2},
+    );
     my $intron_type = 0;
     foreach my $type (ScoreSpliceSite::getIntronTypes){
         $intron->add_tag_value
@@ -269,19 +308,32 @@ sub writeIntron{
             "acceptor_score_$type",
             $scores{'A'}->{$type},
         );
-        if ($scores{'A'}->{$type} > 50 and 
-            $scores{'D'}->{$type} > 50){
+        if ($scores{'D'}->{$type} > 50
+            #and $scores{'A'}->{$type} > 50
+        ){
             if ($intron_type){
                 if ( $scores{'D'}->{$type} >= $scores{'D'}->{$intron_type}){
                 #this is a better score than our previous designation
                     if ($type =~ /U12$/ and $intron_type =~ /U2$/){
-                    #we only annotate as U12 if the donor site score is 
-                    #at least 25 more than a U2 site
-                        $intron_type = $type if $scores{'D'}->{$type} - $scores{'D'}->{$intron_type} >= 25;
+                        $intron_type =pickU12orU2 
+                        (
+                            scores    => \%scores,
+                            u12branch => $u12_b_score,
+                            U12       => $type, 
+                            U2        => $intron_type,
+                        );
+
+                    }elsif ($type =~ /U2$/ and $intron_type =~ /U12$/){
+                        $intron_type = pickU12orU2
+                        (
+                            scores    => \%scores,
+                            u12branch => $u12_b_score,
+                            U12       => $intron_type,
+                            U2        => $type, 
+                        );
                     }else{
                         $intron_type = $type;
                     }
-                    #TODO - consider branch site
                 }
             }else{
                 $intron_type = $type;
@@ -293,6 +345,26 @@ sub writeIntron{
     $transcripts{$tr}->{$intron_type}++;
 }
 
+#################################################
+sub pickU12orU2{
+    my %args = @_;
+    if ($args{scores}->{'D'}->{$args{U12}} - 
+        $args{scores}->{'D'}->{$args{U2}} 
+        >= 25){
+        #we annotate as U12 if the donor site score is 
+        #at least 25 more than a U2 site
+        return $args{U12};
+    }elsif ($args{scores}->{'D'}->{$args{U12}} - 
+            $args{scores}->{'D'}->{$args{U2}} 
+            >= 10){
+        #otherwise if U12 score is at least 10 better we annotate
+        # as U12 if there's a 'good' (score >= 65) branch point
+        if ($args{u12branch} >= 65){
+            return $args{U12};
+        }
+    }    
+    return $args{U2};
+}
 #################################################
 sub revcomp{
     my $seq = shift;
@@ -307,21 +379,28 @@ sub usage{
 
     print <<EOT
 
-Create a GTF3 file of introns scored for U2 and U12 splice sites
+Create a GFF3 file of introns scored for U2 and U12 splice sites
 
 USAGE: $0 -f genome_fasta.fa -g genes_and_exons.gff3
 
 OPTIONS:
     
-    -f,--fasta 
+    -f,--fasta FILE
         Genome fasta file for retrieving DNA sequences for intron-exon boundaries
-    -g,--gff
-        GTF3 file containing information on the genes and exons to use for intron file creation
-    -s,--species
+
+    -g,--gff FILE
+        GFF3 file containing information on the genes and exons to use for intron file creation
+
+    -s,--species INT
         Taxonomic code for species to use for splice prediction. Default is 9606 (human). 
         Available species are 10090 (mouse), 3702 (A. thaliana), 6239 (C. elegans), 7227 (D. melanogaster) and 9606 (human).
-    -o,--output
+
+    -o,--output FILE
         Optional output file. Default = STDOUT.
+
+    -t,--transcripts FILE
+        Optional output file giving counts of intron types per transcript.
+
     -h,--help 
         Show this message and exit
 
