@@ -90,6 +90,7 @@ while (my $feat = $gff->next_feature() ) {
 }
 parseExons(\%exons);
 my $time = strftime( "%H:%M:%S", localtime );
+$i =~ s/(\d{1,3}?)(?=(\d{3})+$)/$1,/g; #add commas for readability
 printf STDERR
 (
     "[$time] processed $i introns - %d U12 introns, %d U2 introns,"
