@@ -44,7 +44,7 @@ if ($opts{o}){
     open ($OUT, ">", $opts{o}) or die "Can't open $opts{o} for writing: $!\n";    
 }
 my %exon_seqs = ();
-my %introns = (); 
+my @introns = (); 
 my %names = (); 
 while (my $feat = $gff->next_feature() ) {
     if($feat->has_tag('gene_id')){
@@ -52,7 +52,7 @@ while (my $feat = $gff->next_feature() ) {
         parseIntrons();
         #clear collected exon seqs and introns
         %exon_seqs = (); 
-        %introns = ();
+        @introns = ();
         #get name and gene id
         my ($id) = $feat->get_tag_values('ID'); 
         $id =~ s/^gene://;
@@ -66,7 +66,7 @@ while (my $feat = $gff->next_feature() ) {
         parseIntrons();
         #...and clear collected exons in case we missed a gene_id tag
         %exon_seqs = (); 
-        %introns = ();
+        @introns = ();
         #get transcript name and associate with gene id
         my ($tr) = $feat->get_tag_values('transcript_id'); 
         my ($parent) = $feat->get_tag_values('Parent');
@@ -76,6 +76,7 @@ while (my $feat = $gff->next_feature() ) {
         getExonSequence($feat);
     }elsif ($feat->primary_tag eq 'intron'){
         #collect intron type related to each exon
+        push @introns, $feat;
     }
 }
 parseIntrons();
