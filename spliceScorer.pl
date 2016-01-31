@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Getopt::Long;
+use List::Util qw( min max );
 use POSIX qw/strftime/;
 use Bio::Tools::GFF;
 use FindBin qw($RealBin);
@@ -196,8 +197,8 @@ sub writeIntron{
     my $intron = new Bio::SeqFeature::Generic
     (
         -seq_id      => $chrom,
-        -start       => $intron_start,
-        -end         => $intron_stop,
+        -start       => min($intron_start, $intron_stop),
+        -end         => max($intron_start, $intron_stop),
         -strand      => $strand,
         -source_tag  => 'spliceScorer',
         -primary_tag => 'intron',
