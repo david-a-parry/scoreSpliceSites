@@ -64,7 +64,10 @@ while (my $feat = $gff->next_feature() ) {
         %exons = ();
         my ($id) = $feat->get_tag_values('ID'); 
         $id =~ s/^gene://;
-        my ($name) = $feat->get_tag_values('Name'); 
+        my $name = '.';
+        if ($feat->has_tag('Name')){
+            ($name) = $feat->get_tag_values('Name'); 
+        }
         $names{$id} = $name; 
         $gffwriter->write_feature($feat);
     }elsif ($feat->has_tag('transcript_id')){
@@ -187,8 +190,8 @@ sub writeIntron{
         $intron_stop = $exon2->start - 1;
     }else{
         ($exon2, $exon1) = ($exon1, $exon2);
-        $intron_start = $exon1->start - 1; 
-        $intron_stop = $exon2->end + 1;
+        $intron_stop = $exon1->end + 1; 
+        $intron_start = $exon2->start - 1;
     }
     my $intron = new Bio::SeqFeature::Generic
     (
@@ -238,12 +241,12 @@ sub writeIntron{
     );
     my $donor    = $fai->fetch("$chrom:$d_start-$d_end");
     my $acc_and_branch = $fai->fetch("$chrom:$a_start-$a_end");
-    my $acceptor = substr($acc_and_branch, 100 - 13,); 
-    my $branch = substr($acc_and_branch, 0, 92); 
     if ($strand < 0){
         $donor = revcomp($donor);
-        $acceptor = revcomp($acceptor);
+        $acc_and_branch = revcomp($acc_and_branch);
     }
+    my $acceptor = substr($acc_and_branch, 100 - 13,); 
+    my $branch = substr($acc_and_branch, 0, 92); 
     $intron->add_tag_value
     (
         'donor_seq',
