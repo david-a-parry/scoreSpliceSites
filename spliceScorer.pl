@@ -251,14 +251,14 @@ sub writeIntron{
     $intron->add_tag_value
     (
         'donor_seq',
-        uc ( substr($donor, 0, 3) ) . 
-        lc (substr($donor, 3, ) ),
+        lc ( substr($donor, 0, 3) ) . 
+        uc (substr($donor, 3, ) ),
     );
     $intron->add_tag_value
     (
         'acceptor_seq',
-        lc ( substr($acceptor, 0, 14) ) . 
-        uc (substr($acceptor, 14, ) ),
+        uc ( substr($acceptor, 0, 14) ) . 
+        lc (substr($acceptor, 14, ) ),
     );
     
     my %scores = ();
@@ -290,10 +290,10 @@ sub writeIntron{
     my $u12_b_seq;
     if ($scores{'B'}->{AT_AC_U12} > $scores{'B'}->{GT_AG_U12}){
         $u12_b_score = $scores{'B'}->{AT_AC_U12};
-        $u12_b_seq = $branch_seqs{AT_AC_U12};
+        $u12_b_seq = uc ($branch_seqs{AT_AC_U12} );
     }else{
         $u12_b_score = $scores{'B'}->{GT_AG_U12};
-        $u12_b_seq = $branch_seqs{GT_AG_U12};
+        $u12_b_seq = uc ($branch_seqs{GT_AG_U12} );
     }
     $intron->add_tag_value
     (
