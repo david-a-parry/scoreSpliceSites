@@ -11,6 +11,7 @@ use Bio::DB::Sam;
 use Bio::SeqFeature::Generic;
 use lib "$RealBin/lib";
 use ScoreSpliceSite;
+use ReverseComplement qw/ reverse_complement /;
 
 my %opts = (s => 9606);
 GetOptions(
@@ -42,7 +43,6 @@ my $gff = Bio::Tools::GFF->new
 (
     -gff_version => 3,
     -fh          => $IN,
-    #-file        => $opts{g},
 );
 
 my $OUT = \*STDOUT;
@@ -100,7 +100,9 @@ while (my $feat = $gff->next_feature() ) {
 #debug        print Dumper $feat;
     }
 }
+$gff->close();
 parseExons(\%exons);
+$gffwriter->close();
 my $time = strftime( "%H:%M:%S", localtime );
 $i =~ s/(\d{1,3}?)(?=(\d{3})+$)/$1,/g; #add commas for readability
 printf STDERR
@@ -117,6 +119,7 @@ if ($TRANS){
     writeTranscriptCounts();
     $time = strftime( "%H:%M:%S", localtime );
     print STDERR "[$time] Finished - processing " . scalar(keys %transcripts) . " transcripts\n";
+    close $TRANS;
 }
 
 #################################################
@@ -251,8 +254,8 @@ sub writeIntron{
     my $donor    = $fai->fetch("$chrom:$d_start-$d_end");
     my $acc_and_branch = $fai->fetch("$chrom:$a_start-$a_end");
     if ($strand < 0){
-        $donor = revcomp($donor);
-        $acc_and_branch = revcomp($acc_and_branch);
+        $donor = reverse_complement($donor);
+        $acc_and_branch = reverse_complement($acc_and_branch);
     }
     my $acceptor = substr($acc_and_branch, 100 - 13,); 
     my $branch = substr($acc_and_branch, 0, 92); 
@@ -401,12 +404,6 @@ sub pickU12orU2{
         }
     }    
     return $args{U2};
-}
-#################################################
-sub revcomp{
-    my $seq = shift;
-    $seq =~ tr/acgtACGT/tgcaTGCA/;
-    return reverse($seq);
 }
 
 #################################################
