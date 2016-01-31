@@ -30,11 +30,19 @@ if (not grep {$opts{s} eq $_} ScoreSpliceSite::getSpecies){
     die "Splice consensus for species '$opts{s}' not available.\n";
 }
 
+my $IN;
+if ($opts{g} =~ /\.gz$/){
+    open ($IN, "gzip -dc $opts{g} |") or die "Can't open $opts{g} via gzip: $!\n";
+}else{
+    open ($IN, "<", $opts{g}) or die "Can't open $opts{g} for reading: $!\n";
+}
+
 my $fai = Bio::DB::Sam::Fai->load($opts{f});#should create index if it doesn't exist
 my $gff = Bio::Tools::GFF->new
 (
     -gff_version => 3,
-    -file        => $opts{g},
+    -fh          => $IN,
+    #-file        => $opts{g},
 );
 
 my $OUT = \*STDOUT;
