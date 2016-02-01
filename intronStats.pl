@@ -91,7 +91,40 @@ sub parseIntrons{
     # introns are confirmed U2 classify as U2
     #if an exon has a neighbouring 'unknown' intron and does not have 
     # a neighbouring U12 intron classify as UNKNOWN
-
+    my %u12 = ();
+    my %u2  = ();
+    my %unknown = ();
+    my %all = ();
+    foreach my $intr (@introns){
+        my ($next)     = $intr->get_tag_values('next_exon_id');
+        my ($previous) = $intr->get_tag_values('previous_exon_id');
+        my ($type)     = $intr->get_tag_values('intron_type'); 
+        if ($type =~ /U12$/){
+            $u12{$next}     = $type;
+            $u12{$previous} = $type;
+        }elsif($type =~ /U2$/){
+            $u2{$next}     = $type;
+            $u2{$previous} = $type;
+        }else{
+            $unknown{$next}     = $type;
+            $unknown{$previous} = $type;
+        }
+        $all{$next}++;
+        $all{$previous}++;
+    }
+    foreach my $k (%all){
+        if (exists $u12{$k}){
+            $class = 'U12';
+            $subclass = $u12{$k};
+        }elsif (exists $unknown{$k}){
+            $class = 'UNKNOWN';
+            $subclass = $unknown{$k};
+        }else{
+            $class = 'U2';
+            $subclass = $u2{$k};
+        }
+        writeExonStats($class, $subclass, $exon_seqs{$k});
+    }
 }
 
 #################################################
