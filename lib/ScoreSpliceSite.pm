@@ -189,6 +189,15 @@ sub getSpecies{
     return @species;
 }
 
+sub getWorstSeq{
+    my ($type, $site,  $species) = @_;
+    return $worst_seqs{$species}->{$type}->{$site};
+} 
+sub getBestSeq{
+    my ($type, $site,  $species) = @_;
+    return $best_seqs{$species}->{$type}->{$site};
+} 
+    
 1;
 
 
