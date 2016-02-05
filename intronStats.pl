@@ -109,10 +109,11 @@ sub parseIntrons{
             $unknown{$next}     = $type;
             $unknown{$previous} = $type;
         }
-        $all{$next}++;
-        $all{$previous}++;
+        $all{$next}     = undef;
+        $all{$previous} = undef;
     }
     foreach my $k (%all){
+        my ($class, $subclass);
         if (exists $u12{$k}){
             $class = 'U12';
             $subclass = $u12{$k};
@@ -123,8 +124,33 @@ sub parseIntrons{
             $class = 'U2';
             $subclass = $u2{$k};
         }
-        writeExonStats($class, $subclass, $exon_seqs{$k});
+        writeExonStats($class, $subclass, $k);
     }
+}
+
+#################################################
+sub writeExonStats{
+    my ($class, $subclass, $exon) = @_;
+    my $gc = getGcPercentage($exon_seqs{$exon});
+    
+
+}
+
+#################################################
+
+#################################################
+sub getGcPercentage{
+    my $seq = shift;
+    my $n = 0;
+    my $gc = 0;
+    while ($seq =~ /(.)/g){
+        if ($1 =~ /[cgCG]/){
+            $gc++;
+        }
+        $n++;
+    }
+    return 0 if $n == 0; 
+    return 100 * $gc / $n;
 }
 
 #################################################
