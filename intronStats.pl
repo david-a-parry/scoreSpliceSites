@@ -52,9 +52,11 @@ print $OUT join
         EXON_ID
         EXON_LENGTH
         PERCENT_GC
+        REPEATS
         TOTAL_REPEAT_LENGTH
         LONGEST_REPEAT
         MEAN_REPEAT_LENGTH
+        HOMOPOLYMERS
         TOTAL_HOMOPOLYMER_LENGTH
         LONGEST_HOMOPOLYMER
         MEAN_HOMOPOLYMER_LENGTH
@@ -179,16 +181,18 @@ sub writeExonStats{
         $exon,
         length($exon_seqs{$exon}),
         sprintf("%.3f", $gc),
+        scalar(@r),
         $total,
         $longest,
         $mean,
+        scalar(@h_lengths),
         $h_total,
         $h_longest,
         $h_mean,
     ) . "\n";
     #intron type (U2 or U12 or UNKNOWN), subtype, exon ID, exon length, % GC,
-    # total length of repeats, longest repeat, mean repeat length,
-    # total length of homopolymers, longest homopolymer, mean homopolymer length
+    # no. repeats, total length of repeats, longest repeat, mean repeat length,
+    # no.homopolymers, total length of homopolymers, longest homopolymer, mean homopolymer length
 }
 
 #################################################
