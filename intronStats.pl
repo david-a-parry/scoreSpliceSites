@@ -43,6 +43,20 @@ my $OUT = \*STDOUT;
 if ($opts{o}){
     open ($OUT, ">", $opts{o}) or die "Can't open $opts{o} for writing: $!\n";    
 }
+print $OUT join
+(   
+    "\t",
+    qw(
+        INTRON_TYPE
+        SUBTYPE
+        EXON_ID
+        PERCENT_GC
+        TOTAL_REPEAT_LENGTH
+        LONGEST_REPEAT
+        TOTAL_HOMOPOLYMER_LENGTH
+        LONGEST_HOMOPOLYMER
+    )
+) . "\n";
 my %exon_seqs = ();
 my @introns = (); 
 my %names = (); 
@@ -132,11 +146,46 @@ sub parseIntrons{
 sub writeExonStats{
     my ($class, $subclass, $exon) = @_;
     my $gc = getGcPercentage($exon_seqs{$exon});
-    
-
+    my @r = getRepeats($exon_seqs{$exon});
+    my ($longest, $longest_homo, $homo, $total) = (0, 0, 0, 0);
+    foreach my $rep (@r){
+        my $l = length($rep);
+        $longest = $l > $longest ? $l : $longest;
+        $total += $l;
+        if ($rep =~ /^(\w)(\1+)+$/){
+            $homo += $l;
+            $longest_homo = $l > $longest_homo ? $l : $longest_homo;
+        }
+    }
+    print $OUT join
+    (
+        "\t",
+        $class,
+        $subclass,
+        $exon,
+        sprintf("%.3f", $gc),
+        $total,
+        $longest,
+        $homo,
+        $longest_homo,
+    ) . "\n";
+    #intron type (U2 or U12 or UNKNOWN), subtype, exon ID, % GC,
+    # total length of repeats, longest repeat, total homopolymer length, 
+    # longest homopolymer
 }
 
 #################################################
+sub getRepeats{
+#return array of 1-4 nucleotide repeats at least 3 nt long found in $seq
+    my $seq = shift;
+    my @h = ();
+    while ($seq =~ /(\w{1,4})(\1)(\1+)*/g){
+        my $rep = "$1$2";
+        $rep .= $3 if $3;
+        push @h, $rep if length($rep) > 2;
+    }
+    return @h;
+}
 
 #################################################
 sub getGcPercentage{
@@ -167,6 +216,7 @@ sub getExonSequence{
     my ($id) = $exon->get_tag_values('exon_id');
     $exon_seqs{$id} = $seq;
 }
+
 #################################################
 sub usage{
     my $msg = shift;
