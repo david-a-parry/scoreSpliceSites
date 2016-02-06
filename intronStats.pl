@@ -126,7 +126,7 @@ sub parseIntrons{
         $all{$next}     = undef;
         $all{$previous} = undef;
     }
-    foreach my $k (%all){
+    foreach my $k (keys %all){
         my ($class, $subclass);
         if (exists $u12{$k}){
             $class = 'U12';
