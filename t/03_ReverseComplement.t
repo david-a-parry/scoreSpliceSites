@@ -1,8 +1,6 @@
 use strict;
 use warnings;
 use Test::More tests => 6;
-use FindBin qw($RealBin);
-use lib "$RealBin/../lib";
 
 BEGIN 
 { 
