@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Getopt::Long;
-use List::Util qw( min max );
+use List::Util qw( min max sum );
 use POSIX qw/strftime/;
 use Bio::Tools::GFF;
 use FindBin qw($RealBin);
@@ -54,8 +54,10 @@ print $OUT join
         PERCENT_GC
         TOTAL_REPEAT_LENGTH
         LONGEST_REPEAT
+        MEAN_REPEAT_LENGTH
         TOTAL_HOMOPOLYMER_LENGTH
         LONGEST_HOMOPOLYMER
+        MEAN_HOMOPOLYMER_LENGTH
     )
 ) . "\n";
 my %exon_seqs = ();
@@ -148,15 +150,26 @@ sub writeExonStats{
     my ($class, $subclass, $exon) = @_;
     my $gc = getGcPercentage($exon_seqs{$exon});
     my @r = getRepeats($exon_seqs{$exon});
-    my ($longest, $longest_homo, $homo, $total) = (0, 0, 0, 0);
+    my @r_lengths;
+    my @h_lengths;
+    my ($longest, $mean, $total) = (0, 0, 0);
+    my ($h_longest, $h_mean, $h_total) = (0, 0, 0);
     foreach my $rep (@r){
         my $l = length($rep);
-        $longest = $l > $longest ? $l : $longest;
-        $total += $l;
+        push @r_lengths, $l;
         if ($rep =~ /^(\w)(\1+)+$/){
-            $homo += $l;
-            $longest_homo = $l > $longest_homo ? $l : $longest_homo;
+            push @h_lengths, $l;
         }
+    }
+    if (@r_lengths){
+        $longest = max(@r_lengths);
+        $total = sum(@r_lengths);
+        $mean = $total/@r_lengths;
+    }
+    if (@h_lengths){
+        $h_longest = max(@h_lengths);
+        $h_total = sum(@h_lengths);
+        $h_mean = $total/@h_lengths;
     }
     print $OUT join
     (
@@ -168,12 +181,14 @@ sub writeExonStats{
         sprintf("%.3f", $gc),
         $total,
         $longest,
-        $homo,
-        $longest_homo,
+        $mean,
+        $h_total,
+        $h_longest,
+        $h_mean,
     ) . "\n";
     #intron type (U2 or U12 or UNKNOWN), subtype, exon ID, exon length, % GC,
-    # total length of repeats, longest repeat, total homopolymer length, 
-    # longest homopolymer
+    # total length of repeats, longest repeat, mean repeat length,
+    # total length of homopolymers, longest homopolymer, mean homopolymer length
 }
 
 #################################################
