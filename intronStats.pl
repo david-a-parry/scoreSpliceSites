@@ -50,6 +50,7 @@ print $OUT join
         INTRON_TYPE
         SUBTYPE
         EXON_ID
+        EXON_LENGTH
         PERCENT_GC
         TOTAL_REPEAT_LENGTH
         LONGEST_REPEAT
@@ -163,13 +164,14 @@ sub writeExonStats{
         $class,
         $subclass,
         $exon,
+        length($exon_seqs{$exon}),
         sprintf("%.3f", $gc),
         $total,
         $longest,
         $homo,
         $longest_homo,
     ) . "\n";
-    #intron type (U2 or U12 or UNKNOWN), subtype, exon ID, % GC,
+    #intron type (U2 or U12 or UNKNOWN), subtype, exon ID, exon length, % GC,
     # total length of repeats, longest repeat, total homopolymer length, 
     # longest homopolymer
 }
