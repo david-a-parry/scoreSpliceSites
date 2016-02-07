@@ -18,6 +18,7 @@ GetOptions(
     \%opts,
     'f|fasta=s',
     'g|gff=s',
+    'b|biotype=s',
     'o|output=s',
     'h|?|help',
 ) or usage("Error getting options!");
@@ -64,11 +65,18 @@ print $OUT join
 ) . "\n";
 my %exon_seqs = ();
 my @introns = (); 
-my %names = (); 
+my %names = ();
+my $biotype = ''; 
 while (my $feat = $gff->next_feature() ) {
     if($feat->has_tag('gene_id')){
         #parse previous introns
-        parseIntrons();
+        if ($opts{b}){
+            if (grep {$_ eq $opts{b}} split(",", $biotype)){
+                parseIntrons();
+            }
+        }else{
+            parseIntrons();
+        }
         #clear collected exon seqs and introns
         %exon_seqs = (); 
         @introns = ();
@@ -82,14 +90,20 @@ while (my $feat = $gff->next_feature() ) {
         $names{$id} = $name; 
     }elsif ($feat->has_tag('transcript_id')){
         #parse introns in case we missed a gene_id tag
-        parseIntrons();
+        if ($opts{b}){
+            if (grep {$_ eq $opts{b}} split(",", $biotype)){
+                parseIntrons();
+            }
+        }else{
+            parseIntrons();
+        }
         #...and clear collected exons in case we missed a gene_id tag
         %exon_seqs = (); 
         @introns = ();
         #get transcript name and associate with gene id
         my ($tr) = $feat->get_tag_values('transcript_id'); 
         my ($parent) = $feat->get_tag_values('Parent');
-        my $biotype = join(",", $feat->get_tag_values('biotype'));
+        $biotype = join(",", $feat->get_tag_values('biotype'));
     }elsif ($feat->primary_tag eq 'exon'){
         #collect exons 
         getExonSequence($feat);
@@ -98,8 +112,13 @@ while (my $feat = $gff->next_feature() ) {
         push @introns, $feat;
     }
 }
-parseIntrons();
-
+if ($opts{b}){
+    if (grep {$_ eq $opts{b}} split(",", $biotype)){
+        parseIntrons();
+    }
+}else{
+    parseIntrons();
+}
 $gff->close();
 close $OUT;
 
