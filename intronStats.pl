@@ -33,8 +33,8 @@ GetOptions(
     'h|?|help',
 ) or usage("Error getting options!");
 usage() if $opts{h};
-usage("-f/--fasta argument is required.") if not $opts{f};
-usage("-g/--gff argument is required.") if not $opts{g};
+checkOptions();
+
 
 my $IN;
 if ($opts{g} =~ /\.gz$/){
@@ -73,7 +73,7 @@ print $OUT join
         MEAN_HOMOPOLYMER_LENGTH
     )
 ) . "\n";
-my %exon_seqs = ();
+my %exon_seqs = ();#TODO - deal with duplicate exons!
 my @introns = (); 
 my %names = ();
 my $biotype = ''; 
@@ -277,9 +277,9 @@ sub getExonSequence{
 #################################################
 sub usage{
     my $msg = shift;
-    print "\n$msg\n" if $msg;
+    print STDERR "\n$msg\n" if $msg;
 
-    print <<EOT
+    print STDERR <<EOT
 
 TODO 
 
@@ -318,6 +318,34 @@ EOT
 ;
     exit 1 if $msg;
     exit;
+}
+
+#################################################
+sub checkOptions{
+    usage("-f/--fasta argument is required.") if not $opts{f};
+    usage("-g/--gff argument is required.") if not $opts{g};
+    my %lengths = 
+    (
+        u => "min_repeat_unit_length",
+        y => "max_repeat_unit_length",
+        m => "min_repeat_length",
+        x => "max_repeat_length",
+    );
+    foreach my $k (keys %lengths){
+        usage("-$k/--$lengths{$k} argument must be greater than 0.") if $opts{$k} < 1;
+    }
+    if ($opts{m} > $opts{x}){
+        usage("-m/--min_repeat_length argument ($opts{m}) is greater than "
+              ."-x/--max_repeat_length argument ($opts{x}).") ;
+    }
+    if ($opts{u} > $opts{m}){
+        usage("-u/--min_repeat_unit_length ($opts{u}) is greater than "
+              ."-m/--min_repeat_length argument argument ($opts{m}).") ;
+    }
+    if ($opts{u} > $opts{y}){
+        usage("-u/--min_repeat_unit_length argument ($opts{u}) is greater than "
+              ."-y/--max_repeat_unit_length argument ($opts{y}).") ;
+    }
 }
 
 #################################################
