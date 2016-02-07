@@ -13,12 +13,20 @@ use lib "$RealBin/lib";
 use ScoreSpliceSite;
 use ReverseComplement qw/ reverse_complement /;
 
-my %opts = (m => 3, x => 999999999999999999999999);
+my %opts = 
+(
+    m => 3, 
+    x => 999999999999999999999999,
+    u => 1,
+    y => 6,
+);
 GetOptions(
     \%opts,
     'f|fasta=s',
     'g|gff=s',
     'b|biotype=s',
+    'u|min_repeat_unit_length=i',
+    'y|max_repeat_unit_length=i',
     'm|min_repeat_length=i',
     'x|max_repeat_length=i',
     'o|output=s',
@@ -69,10 +77,12 @@ my %exon_seqs = ();
 my @introns = (); 
 my %names = ();
 my $biotype = ''; 
+my $intron_count = 0;
 while (my $feat = $gff->next_feature() ) {
     if($feat->has_tag('gene_id')){
         #parse previous introns
         if ($opts{b}){
+        #TODO would be more efficient to skip at the exon level
             if (grep {$_ eq $opts{b}} split(",", $biotype)){
                 parseIntrons();
             }
@@ -93,6 +103,7 @@ while (my $feat = $gff->next_feature() ) {
     }elsif ($feat->has_tag('transcript_id')){
         #parse introns in case we missed a gene_id tag
         if ($opts{b}){
+        #TODO would be more efficient to skip at the exon level
             if (grep {$_ eq $opts{b}} split(",", $biotype)){
                 parseIntrons();
             }
@@ -123,6 +134,8 @@ if ($opts{b}){
 }
 $gff->close();
 close $OUT;
+my $time = strftime( "%H:%M:%S", localtime );
+print STDERR "[$time] Done - processed $intron_count introns.\n";
 
 #################################################
 sub parseIntrons{
@@ -151,6 +164,8 @@ sub parseIntrons{
         }
         $all{$next}     = undef;
         $all{$previous} = undef;
+        $intron_count++;
+        reportProgress($intron_count);
     }
     foreach my $k (keys %all){
         my ($class, $subclass);
@@ -221,7 +236,7 @@ sub getRepeats{
 #return array of 1-4 nucleotide repeats at least 3 nt long found in $seq
     my $seq = shift;
     my @h = ();
-    while ($seq =~ /(\w{1,4})(\1)(\1+)*/g){
+    while ($seq =~ /(\w{$opts{u},$opts{y}})(\1)(\1+)*/g){
         my $rep = "$1$2";
         $rep .= $3 if $3;
         push @h, $rep if length($rep) >= $opts{m} and length($rep) <= $opts{x};
@@ -287,6 +302,12 @@ OPTIONS:
     -x,--max_repeat_length INT
         Only count repeats of this value or shorter (default = 999999999999999999999999)
     
+    -u,--min_repeat_unit_length INT
+        Only count repetetive sequences where the repeated unit is at least this long (default = 1)
+    
+    -y,--max_repeat_unit_length INT
+        Only count repetetive sequences where the repeated unit is this long or shorter (default = 6)
+    
     -o,--output FILE
         Optional output file. Default = STDOUT.
 
@@ -297,6 +318,16 @@ EOT
 ;
     exit 1 if $msg;
     exit;
+}
+
+#################################################
+sub reportProgress{
+    my $n = shift;
+    return if not $n;
+    return if ($n % 10000); 
+    my $time = strftime( "%H:%M:%S", localtime );
+    $n =~ s/(\d{1,3}?)(?=(\d{3})+$)/$1,/g; #add commas for readability
+    print STDERR "[$time] processed $n introns...\n";
 }
 
 
