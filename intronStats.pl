@@ -13,12 +13,14 @@ use lib "$RealBin/lib";
 use ScoreSpliceSite;
 use ReverseComplement qw/ reverse_complement /;
 
-my %opts = ();
+my %opts = (m => 3, x => 999999999999999999999999);
 GetOptions(
     \%opts,
     'f|fasta=s',
     'g|gff=s',
     'b|biotype=s',
+    'm|min_repeat_length=i',
+    'x|max_repeat_length=i',
     'o|output=s',
     'h|?|help',
 ) or usage("Error getting options!");
@@ -222,7 +224,7 @@ sub getRepeats{
     while ($seq =~ /(\w{1,4})(\1)(\1+)*/g){
         my $rep = "$1$2";
         $rep .= $3 if $3;
-        push @h, $rep if length($rep) > 2;
+        push @h, $rep if length($rep) >= $opts{m} and length($rep) <= $opts{x};
     }
     return @h;
 }
@@ -276,6 +278,15 @@ OPTIONS:
     -g,--gff FILE
         GFF3 intron file created by spliceScorer.pl
 
+    -b,--biotypes STRING
+        Only include exons from transcripts of this biotype (e.g. protein_coding)
+
+    -m,--min_repeat_length INT
+        Only count repeats at least this long (default = 3)
+    
+    -x,--max_repeat_length INT
+        Only count repeats of this value or shorter (default = 999999999999999999999999)
+    
     -o,--output FILE
         Optional output file. Default = STDOUT.
 
@@ -287,7 +298,5 @@ EOT
     exit 1 if $msg;
     exit;
 }
-
-
 
 
