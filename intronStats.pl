@@ -8,6 +8,7 @@ use POSIX qw/strftime/;
 use Bio::Tools::GFF;
 use FindBin qw($RealBin);
 use File::Temp qw/ tempfile /;
+use File::Basename;
 use Sort::External;
 use Bio::DB::Sam;
 use Bio::SeqFeature::Generic;
@@ -21,6 +22,7 @@ my %opts =
     x => 999999999999999999999999,
     u => 1,
     y => 6,
+    n => 2,
 );
 GetOptions(
     \%opts,
@@ -31,6 +33,7 @@ GetOptions(
     'y|max_repeat_unit_length=i',
     'm|min_repeat_length=i',
     'x|max_repeat_length=i',
+    'n|min_number_of_repeats=i',
     'o|output=s',
     'e|exon_seqs=s',
     'h|?|help',
@@ -66,6 +69,7 @@ sub outputExonStats{
     open (my $EX, '<', $opts{e}) or die 
      "Can't read exon sequence file '$opts{e}': $!\n";
     my $n = 0; 
+    writeHeader();
     while (my $line = <$EX>){
         my ($id, $seq) = split("\t", $line); 
         my ($class, $subclass);
@@ -81,6 +85,7 @@ sub outputExonStats{
         }else{
             #some exons (e.g. one-gene-exon exons) will not have an associated
             # intron, so no need to warn
+            #TODO - check whether we should warn for some exons?
             next;
         }
         writeExonStats($class, $subclass, $id, $seq);
@@ -94,6 +99,7 @@ sub outputExonStats{
     print STDERR "[$time] Finished writing stats for $n exons.\n";
     close $OUT;
 }
+
 #################################################
 sub sortExonSeqs{
     return if not $TMPEX;
@@ -166,6 +172,56 @@ EOT
 }
 
 #################################################
+sub writeHeader{
+    my @opt_string = ();
+    foreach my $k ( sort keys %opts ) {
+        if ( not ref $opts{$k} ) {
+            push @opt_string, "$k=$opts{$k}";
+        }elsif ( ref $opts{$k} eq 'SCALAR' ) {
+            if ( defined ${ $opts{$k} } ) {
+                push @opt_string, "$k=${$opts{$k}}";
+            }else {
+                push @opt_string, "$k=undef";
+            }
+        }elsif ( ref $opts{$k} eq 'ARRAY' ) {
+            if ( @{ $opts{$k} } ) {
+                push @opt_string, "$k=" . join( ",", @{ $opts{$k} } );
+            }else {
+                push @opt_string, "$k=undef";
+            }
+        }
+    }
+    my $caller = fileparse($0);
+    my @cols =  qw(
+        INTRON_TYPE
+        SUBTYPE
+        EXON_ID
+        EXON_LENGTH
+        PERCENT_GC
+        REPEATS
+        TOTAL_REPEAT_LENGTH
+        LONGEST_REPEAT
+        MEAN_REPEAT_LENGTH
+    );
+    for my $l ($opts{u}..$opts{y}){
+        for my $s (qw/
+            _NT_REPEATS
+            _NT_REPEATs_TOTAL_LENGTH
+            _NT_REPEATS_LONGEST
+            _NT_REPEATS_MEAN_LENGTH
+        /){
+            push @cols, "$l$s";
+        }
+    }
+    print $OUT "##$caller\"" . join( " ", @opt_string ) . "\"";
+    print $OUT join
+    (   
+        "\t",
+        @cols,
+    ) . "\n";
+}
+
+#################################################
 sub setupOutput{
     my $FH;
     if ($opts{o}){
@@ -173,25 +229,6 @@ sub setupOutput{
     }else{
         $FH = \*STDOUT;
     }
-    print $FH join
-    (   
-        "\t",
-        qw(
-            INTRON_TYPE
-            SUBTYPE
-            EXON_ID
-            EXON_LENGTH
-            PERCENT_GC
-            REPEATS
-            TOTAL_REPEAT_LENGTH
-            LONGEST_REPEAT
-            MEAN_REPEAT_LENGTH
-            HOMOPOLYMERS
-            TOTAL_HOMOPOLYMER_LENGTH
-            LONGEST_HOMOPOLYMER
-            MEAN_HOMOPOLYMER_LENGTH
-        )
-    ) . "\n";
     return $FH;
 }
 
@@ -283,31 +320,51 @@ sub parseIntrons{
 
 
 #################################################
+sub sortRepArray{
+    my $hashes = shift;
+    @$hashes = sort 
+    { 
+        $a->{start} <=> $b->{start} ||
+        $a->{end} <=> $b->{end}
+    } @$hashes;
+}
+#################################################
+sub getRepeatStats{
+#get length of each repeat in each category
+#and calculate longest, cumulative lengths and mean lengths
+    my $r = shift; 
+    my @stats = (); 
+    foreach my $k ( "all", $opts{u}..$opts{y},){
+        if (exists $r->{$k}){
+            if ($k eq 'all'){
+                sortRepArray($r->{$k}); 
+            }
+            my @l = ();
+            foreach my $rep_hash (@{$r->{$k}}){
+                push @l, length($rep_hash->{seq});
+                #calculate overlaps if any
+                #TODO
+            }
+            #if $r->{$k} exists we must have at least one array entry
+            my $longest = max(@l);
+            my $total = sum(@l);
+            #some repeats may overlap so we need to subtract overlaps from total
+            #TODO
+            my $mean = $total/@l;
+            push @stats, scalar(@l), $longest, $total, $mean;
+        }else{
+            push @stats, 0, 0, 0, 0;
+        }
+    }
+    return @stats;
+}
+        
+#################################################
 sub writeExonStats{
     my ($class, $subclass, $exon, $seq) = @_;
     my $gc = getGcPercentage($seq);
-    my @r = getRepeats($seq);
-    my @r_lengths;
-    my @h_lengths;
-    my ($longest, $mean, $total) = (0, 0, 0);
-    my ($h_longest, $h_mean, $h_total) = (0, 0, 0);
-    foreach my $rep (@r){
-        my $l = length($rep);
-        push @r_lengths, $l;
-        if ($rep =~ /^(\w)(\1+)+$/){
-            push @h_lengths, $l;
-        }
-    }
-    if (@r_lengths){
-        $longest = max(@r_lengths);
-        $total = sum(@r_lengths);
-        $mean = $total/@r_lengths;
-    }
-    if (@h_lengths){
-        $h_longest = max(@h_lengths);
-        $h_total = sum(@h_lengths);
-        $h_mean = $total/@h_lengths;
-    }
+    my %reps = getRepeats($seq);
+    my @repeat_stats = getRepeatStats(\%reps); 
     print $OUT join
     (
         "\t",
@@ -316,14 +373,7 @@ sub writeExonStats{
         $exon,
         length($seq),
         sprintf("%.3f", $gc),
-        scalar(@r),
-        $total,
-        $longest,
-        $mean,
-        scalar(@h_lengths),
-        $h_total,
-        $h_longest,
-        $h_mean,
+        @repeat_stats,
     ) . "\n";
     #intron type (U2 or U12 or UNKNOWN), subtype, exon ID, exon length, % GC,
     # no. repeats, total length of repeats, longest repeat, mean repeat length,
@@ -332,18 +382,92 @@ sub writeExonStats{
 
 #################################################
 sub getRepeats{
-#return array of 1-6 (or rather $opts{u}-$opts{y}) nucleotide repeats at least 3 nt long found in $seq
+# return array of 1-6 (or rather $opts{u}-$opts{y}) nucleotide repeats 
+# between $opts{m} and $opts{x} nt long found in $seq
+# repeats must consist of at least $opts{n} repeat units (e.g. A * $opts{n} or CAG * $opts{n})
     my $seq = shift;
-    my @h = ();
-    while ($seq =~ /(\w{$opts{u},$opts{y}})(\1)(\1+)*/g){
-        my $rep = "$1$2";
-        $rep .= $3 if $3;
-        push @h, $rep if length($rep) >= $opts{m} and length($rep) <= $opts{x};
+    my $min_n_rep = $opts{n} - 1;
+=cut
+    while ($seq =~ /((\w{$opts{u},$opts{y}})(\2){$min_n_rep,})/g){#does not always get longest full match cos it will find the longest possible repeat in $2
+        my $rep = $1;
+        my $l   = length($rep);
+        if ($l >= $opts{m} and $l <= $opts{x}){
+            push @{$r{all}}, $rep;
+            push @{$r{$l}}, $rep;
+        }
     }
-    return @h;
+=cut
+
+    #test all repeats between $opts{u} and $opts{y} nt 
+    # (ensuring we reduce to the simplest repeat unit)
+    # record all repeats even if overlapping, but calculate total repeat length based on 
+    # non-overlapping length of repeats
+    my %r = (); #hash of arrays of hashes for each repeat found
+                   #key is repeat unit length
+                   #value is array of hashes with keys:   
+                   #    start => start coordinate of repeat 
+                   #    end   => end coordinate of repeat
+                   #    seq   => repeat sequence
+    #for each possible repeat unit length
+    for my $n ($opts{u} .. $opts{y}){
+        my $longest = ''; 
+        my $rep_length = 0;
+        for (my $i = 0; $i < length($seq); ){
+            my $s = substr($seq, $i,); 
+            if ($s =~ /^((\w{$n})(\2){$min_n_rep,})/){
+                my $rep = $1;
+                #make sure we don't mistake a 2nt repeat for a 4nt repeat etc.
+                my $repeat_length = getRepeatLength($rep);
+                if ($repeat_length != $n){
+                    $i++;
+                    next;
+                }
+                #check total length of repeat is within our min/max limits
+                my $l = length($rep); 
+                if ($l >= $opts{m} and $l <= $opts{x}){
+                    #add to arrays of hashes for this repeat length
+                    my $h = 
+                    {
+                        start => $i, 
+                        end   => $i + $l, 
+                        seq   => $rep,
+                    };
+                    push @{$r{$n}}, $h;
+                    push @{$r{all}}, $h;
+                }
+                #we've found a repeat, next different repeat could overlap
+                # by $n - 1 nucleotides with end of this repeat
+                # - increment $i accordingly
+                $i += ($l - ($n - 1));
+            }else{
+                $i++;#no repeat found, increment by 1
+            }
+        }
+    }
+    return %r;
 }
 
-#################################################
+###########################################################
+sub getRepeatLength{
+#finds shortest repeating unit of string
+#if string is not repetitive returns length of string
+    my $string = shift;
+    my $l = length($string);
+    #get first half of divisors (probable needless optimization, could just do this in one pass)
+    my @div = grep{ $l % $_ == 0 } 1 .. sqrt($l);
+    #get upper half of divisors 
+    push @div, map {$l == $_*$_ ? () : $l/$_} reverse @div;
+    for (my $i = 0; $i < @div; $i++){
+        my $s = substr($string, 0, $div[$i]);
+        my $j = $l/$div[$i];
+        if ( $string eq ($s x $j)){
+            return $div[$i];
+        }
+    }
+    return $l;
+}
+
+###########################################################
 sub getGcPercentage{
     my $seq = shift;
     my $n = 0;
@@ -421,6 +545,11 @@ sub checkOptions{
         usage("-u/--min_repeat_unit_length argument ($opts{u}) is greater than "
               ."-y/--max_repeat_unit_length argument ($opts{y}).") ;
     }
+    if ($opts{n} < 2){
+        usage("-n/--min_number_of_repeats argument must be greater than 1.");
+    }
+#TODO - 
+#check --min_number_of_repeats * repeat_unit_lengths not greater than --max_repeat_length?
 }
 
 #################################################
@@ -467,6 +596,9 @@ OPTIONS:
     -y,--max_repeat_unit_length INT
         Only count repetetive sequences where the repeated unit is this long or shorter (default = 6)
     
+    -n,--min_number_of_repeats INT 
+        Minimum number of repeat units to consider (default = 2).
+
     -o,--output FILE
         Optional output file. Default = STDOUT.
     
