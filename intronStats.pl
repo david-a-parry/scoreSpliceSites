@@ -19,10 +19,11 @@ use ReverseComplement qw/ reverse_complement /;
 my %opts = 
 (
     m => 3, 
-    x => 999999999999999999999999,
+    x => 9999999999,
     u => 1,
     y => 6,
     n => 2,
+    t => 3,
 );
 GetOptions(
     \%opts,
@@ -34,6 +35,7 @@ GetOptions(
     'm|min_repeat_length=i',
     'x|max_repeat_length=i',
     'n|min_number_of_repeats=i',
+    't|trim_exons=i',
     'o|output=s',
     'e|exon_seqs=s',
     'h|?|help',
@@ -85,7 +87,7 @@ sub outputExonStats{
         }else{
             #some exons (e.g. one-gene-exon exons) will not have an associated
             # intron, so no need to warn
-            #TODO - check whether we should warn for some exons?
+            #TODO - check whether we should warn for some exons? (i.e. if not a single exon gene)
             next;
         }
         writeExonStats($class, $subclass, $id, $seq);
@@ -192,6 +194,7 @@ sub writeHeader{
         }
     }
     my $caller = fileparse($0);
+    print $OUT "##$caller\"" . join( " ", @opt_string ) . "\"\n";
     my @cols =  qw(
         INTRON_TYPE
         SUBTYPE
@@ -213,7 +216,6 @@ sub writeHeader{
             push @cols, "$l$s";
         }
     }
-    print $OUT "##$caller\"" . join( " ", @opt_string ) . "\"";
     print $OUT join
     (   
         "\t",
@@ -337,21 +339,31 @@ sub getRepeatStats{
     foreach my $k ( "all", $opts{u}..$opts{y},){
         if (exists $r->{$k}){
             if ($k eq 'all'){
-                sortRepArray($r->{$k}); 
+                sortRepArray($r->{$k});#all other array should be sorted already
             }
             my @l = ();
+            my $overlaps = 0; 
+            my $prev_hash; #for overlaps
             foreach my $rep_hash (@{$r->{$k}}){
                 push @l, length($rep_hash->{seq});
-                #calculate overlaps if any
-                #TODO
+                #calculate overlaps (if any)
+                if ($prev_hash){
+                    if ($rep_hash->{start} <= $prev_hash->{end}){
+                        $overlaps += $prev_hash->{end} - $rep_hash->{start} + 1;
+                    }
+                }
+                $prev_hash = $rep_hash;
+                
             }
-            #if $r->{$k} exists we must have at least one array entry
             my $longest = max(@l);
             my $total = sum(@l);
+            #if $r->{$k} exists we must have at least one array entry, no need 
+            # to worry about divide by 0 error
+            my $mean = sprintf("%.3f", $total/@l);
             #some repeats may overlap so we need to subtract overlaps from total
-            #TODO
-            my $mean = $total/@l;
-            push @stats, scalar(@l), $longest, $total, $mean;
+            # but only after calculating mean repeat length
+            $total -= $overlaps;
+            push @stats, scalar(@l), $total, $longest, $mean;
         }else{
             push @stats, 0, 0, 0, 0;
         }
@@ -362,6 +374,14 @@ sub getRepeatStats{
 #################################################
 sub writeExonStats{
     my ($class, $subclass, $exon, $seq) = @_;
+    my $trimmed;
+    if ($opts{t} > 0){
+        my $trimmed_length = length($seq) - $opts{t} - $opts{t};
+        return if $trimmed_length < 1;
+        $trimmed = substr($seq, $opts{t}, $trimmed_length - 1 );
+    }else{
+        $trimmed = $seq;
+    }
     my $gc = getGcPercentage($seq);
     my %reps = getRepeats($seq);
     my @repeat_stats = getRepeatStats(\%reps); 
@@ -588,13 +608,16 @@ OPTIONS:
         Only count repeats at least this long (default = 3)
     
     -x,--max_repeat_length INT
-        Only count repeats of this value or shorter (default = 999999999999999999999999)
+        Only count repeats of this value or shorter 
+        (default = 9999999999) 
     
     -u,--min_repeat_unit_length INT
-        Only count repetetive sequences where the repeated unit is at least this long (default = 1)
+        Only count repetetive sequences where the repeated unit is at least 
+        this long (default = 1)
     
     -y,--max_repeat_unit_length INT
-        Only count repetetive sequences where the repeated unit is this long or shorter (default = 6)
+        Only count repetetive sequences where the repeated unit is this long or
+        shorter (default = 6)
     
     -n,--min_number_of_repeats INT 
         Minimum number of repeat units to consider (default = 2).
@@ -606,6 +629,11 @@ OPTIONS:
         Optional file for reading/writing DNA sequences of exons retrieved. 
         If this file exists it will be read for assessing exon stats; if not 
         it will be created for future use.
+
+    -t,--trim INT
+        Trim the 5' and 3' ends of exons by this amount. The default value of 3
+        is used to remove bias from splice site consensus sequences used to 
+        determine the intron types.
 
     -h,--help 
         Show this message and exit
