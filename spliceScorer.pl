@@ -327,7 +327,8 @@ sub writeIntron{
         "U2_branch_best_seq",
         $branch_seqs{GT_AG_U2},
     );
-    my $intron_type = 0;
+    my $best_u2;
+    my $best_u12;
     foreach my $type (ScoreSpliceSite::getIntronTypes){
         $intron->add_tag_value
         (
@@ -339,38 +340,35 @@ sub writeIntron{
             "acceptor_score_$type",
             sprintf("%.2f", $scores{'A'}->{$type}),
         );
-        if ($scores{'D'}->{$type} > 50
-            #and $scores{'A'}->{$type} > 50
-        ){
-            if ($intron_type){
-                if ( $scores{'D'}->{$type} >= $scores{'D'}->{$intron_type}){
-                #this is a better score than our previous designation
-                    if ($type =~ /U12$/ and $intron_type =~ /U2$/){
-                        $intron_type =pickU12orU2 
-                        (
-                            scores    => \%scores,
-                            u12branch => $u12_b_score,
-                            U12       => $type, 
-                            U2        => $intron_type,
-                        );
 
-                    }elsif ($type =~ /U2$/ and $intron_type =~ /U12$/){
-                        $intron_type = pickU12orU2
-                        (
-                            scores    => \%scores,
-                            u12branch => $u12_b_score,
-                            U12       => $intron_type,
-                            U2        => $type, 
-                        );
-                    }else{
-                        $intron_type = $type;
-                    }
-                }
+        if ($type =~ /U12$/){
+            if ($best_u12){
+                 if ($scores{'D'}->{$type} > $scores{'D'}->{$best_u12}){
+                    $best_u12 = $type;
+                 }
             }else{
-                $intron_type = $type;
+                $best_u12 = $type;
+            }
+        }elsif($type =~ /U2$/){
+            if ($best_u2){
+                 if ($scores{'D'}->{$type} > $scores{'D'}->{$best_u2}){
+                    $best_u2 = $type;
+                 }
+            }else{
+                $best_u2 = $type;
             }
         }
     }
+    
+
+    my $intron_type =pickU12orU2 
+    (
+        scores    => \%scores,
+        u12branch => $u12_b_score,
+        U12       => $best_u12, 
+        U2        => $best_u2, 
+    );
+
     $intron->add_tag_value("intron_type", $intron_type); 
     $gffwriter->write_feature($intron);
     $transcripts{$tr}->{$intron_type}++;
@@ -388,6 +386,12 @@ sub writeIntron{
 #################################################
 sub pickU12orU2{
     my %args = @_;
+    if ($args{scores}->{'D'}->{$args{U12}} < 50 
+        and $args{scores}->{'D'}->{$args{U2}} < 50){
+        #classify anything with both scores below 50 as
+        # UNKNOWN
+        return 0;
+    }
     if ($args{scores}->{'D'}->{$args{U12}} - 
         $args{scores}->{'D'}->{$args{U2}} 
         >= 25){
