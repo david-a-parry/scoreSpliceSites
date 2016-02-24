@@ -16,6 +16,8 @@ use lib "$RealBin/lib";
 use ScoreSpliceSite;
 use ReverseComplement qw/ reverse_complement /;
 
+my @repeat_units = ();  #if we only want to match specific repeats put
+                        #the repeat units we want to match in this array
 my %opts = 
 (
     m => 3, 
@@ -24,6 +26,7 @@ my %opts =
     y => 6,
     n => 2,
     t => 3,
+    r => \@repeat_units, 
 );
 GetOptions(
     \%opts,
@@ -36,6 +39,7 @@ GetOptions(
     'x|max_repeat_length=i',
     'n|min_number_of_repeats=i',
     't|trim_exons=i',
+    'r|repeat_units=s{,}',
     'o|output=s',
     'e|exon_seqs=s',
     'h|?|help',
@@ -441,6 +445,12 @@ sub getRepeats{
                 if ($repeat_length != $n){
                     $i++;
                     next;
+                }elsif(@repeat_units){#if we've specified the repeat units we're looking at, check if it matches
+                    my $r = substr($rep, 0, $repeat_length);
+                    if (not grep {$r eq $_} @repeat_units){
+                        $i++;
+                        next;
+                    }
                 }
                 #check total length of repeat is within our min/max limits
                 my $l = length($rep); 
@@ -568,6 +578,18 @@ sub checkOptions{
     if ($opts{n} < 2){
         usage("-n/--min_number_of_repeats argument must be greater than 1.");
     }
+    my @simp_rep = (); 
+    foreach my $r (@repeat_units){
+        my $l = getRepeatLength($r);
+        if (length($l) < length($r) ){
+            my $s = substr($r, 0, $l); 
+            warn "Simplifying '$r' to '$s' repeat.\n";
+            push @simp_rep, $s;
+        }else{
+            push @simp_rep, $r;
+        }
+    }
+    @repeat_units = @simp_rep;
 #TODO - 
 #check --min_number_of_repeats * repeat_unit_lengths not greater than --max_repeat_length?
 }
