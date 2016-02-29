@@ -12,6 +12,7 @@ use File::Basename;
 use Sort::External;
 use Bio::DB::Sam;
 use Bio::SeqFeature::Generic;
+#use re 'debugcolor';
 use lib "$RealBin/lib";
 use ScoreSpliceSite;
 use ReverseComplement qw/ reverse_complement /;
@@ -157,7 +158,7 @@ sub outputExonStats{
 #################################################
 sub sortSeqs{
     my ($TMP_FH, $tmp_seq_file, $outfile, $type) = @_;
-    return if not $TMP_FH;
+    return $outfile if not $TMP_FH;
     close $TMP_FH;
     open (my $EXIN, '<', $tmp_seq_file) or die 
      "Can't open temporary $type sequence file '$tmp_seq_file' for reading: $!\n";
@@ -530,7 +531,7 @@ sub getRepeats{
         my $longest = ''; 
         my $rep_length = 0;
         for (my $i = 0; $i < length($seq); ){
-            my $s = substr($seq, $i,); 
+            my $s = substr($seq, $i, $n * $MAX_REP_SCAN); 
             if ($s =~ /^((\w{$n})(\2){$min_n_rep,$MAX_REP_SCAN})/){
             #$MAX_REP_SCAN is there to prevent deep recursion in complex regex
                 my $rep = $1;
@@ -548,10 +549,11 @@ sub getRepeats{
                 }
                 #we can get full repeat with a simpler regex if we have fewer 
                 # than $MAX_REP_SCAN repeats 
+                $s = substr($seq, $i,);
                 if ($s =~ /^(($r){$min_n_rep,})/){
                     $rep = $1;
                 }else{
-                    warn "INTERNAL ERROR FINDING FULL LENGTH OF REPEAT!";
+                    warn "INTERNAL ERROR FINDING FULL LENGTH OF REPEAT for $rep!";
                 }
                 #check total length of repeat is within our min/max limits
                 my $l = length($rep); 
@@ -741,7 +743,8 @@ USAGE: $0 -f genome_fasta.fa -g introns.gff3
 OPTIONS:
     
     -f,--fasta FILE
-        Genome fasta file for retrieving DNA sequences for intron-exon boundaries
+        Genome fasta file for retrieving DNA sequences for intron-exon boundaries. 
+        Must not be repeat masked (soft or hard). 
 
     -g,--gff FILE
         GFF3 intron file created by spliceScorer.pl
