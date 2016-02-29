@@ -18,6 +18,9 @@ use ReverseComplement qw/ reverse_complement /;
 
 my @repeat_units = ();  #if we only want to match specific repeats put
                         #the repeat units we want to match in this array
+my $MAX_REP_SCAN = 100; #in the first instance only look for a 
+                        # maximum of this many repeats in regex to prevent
+                        # deep recursion
 my %opts = 
 (
     m => 3, 
@@ -42,6 +45,7 @@ GetOptions(
     'r|repeat_units=s{,}',
     'o|output=s',
     'e|exon_seqs=s',
+    'i|intron_seqs=s',
     'h|?|help',
 ) or usage("Error getting options!");
 usage() if $opts{h};
@@ -54,20 +58,64 @@ if ($opts{g} =~ /\.gz$/){
     open ($IN, "<", $opts{g}) or die "Can't open $opts{g} for reading: $!\n";
 }
 
-my $OUT = setupOutput();
+my ($I_OUT, $E_OUT) = setupOutput();
 my ($TMPEX, $ex_seq_file) = setupExonSeqFile();
+my ($TMPIN, $in_seq_file) = setupIntronSeqFile();
 
 my %exon_seqs = ();#all values undef, records ids of exons we've already retrieved seq for
-my %u12 = ();#records exon IDs for exons with a neighbouring U12 intron
-my %u2  = ();#as above for U2
-my %unknown = ();#as above for unknown intron types
+my %intron_seqs = ();#all values undef, records ids of exons we've already retrieved seq for
+my %u12_introns = ();#records U12 intron IDs 
+my %u2_introns = ();#records U2 intron IDs 
+my %unknown_introns = ();#records IDs of introns of unknown type
+my %u12_exons = ();#records exon IDs for exons with a neighbouring U12 intron
+my %u2_exons  = ();#as above for U2
+my %unknown_exons = ();#as above for unknown intron types
 #my %names = ();
 
 processIntronGff();
 
-sortExonSeqs();
-
+$opts{e} = sortSeqs($TMPEX, $ex_seq_file, $opts{e}, "exon");
+$opts{i} = sortSeqs($TMPIN, $in_seq_file, $opts{i}, "intron");
+writeHeaders();
 outputExonStats();
+outputIntronStats();
+
+
+#################################################
+sub outputIntronStats{
+    open (my $IN, '<', $opts{i}) or die 
+     "Can't read intron sequence file '$opts{i}': $!\n";
+    my $n = 0; 
+    while (my $line = <$IN>){
+        my ($id, $seq) = split("\t", $line); 
+        my ($class, $subclass);
+        if (exists $u12_introns{$id}){
+            $class = 'U12';
+            $subclass = $u12_introns{$id};
+        }elsif (exists $unknown_introns{$id}){
+            $class = 'UNKNOWN';
+            $subclass = $unknown_introns{$id};
+        }elsif (exists $u2_introns{$id}){
+            $class = 'U2';
+            $subclass = $u2_introns{$id};
+        }else{
+            #some exons (e.g. one-gene-exon exons) will not have an associated
+            # intron, so no need to warn
+            #TODO - check whether we should warn for some exons? (i.e. if not a single exon gene)
+            next;
+        }
+        writeExonStats($class, $subclass, $id, $seq, $I_OUT);
+        $n++;
+        if (not $n % 10000){
+            my $time = strftime( "%H:%M:%S", localtime );
+            print STDERR "[$time] Wrote stats for $n introns...\n" ;
+        }
+    }
+    my $time = strftime( "%H:%M:%S", localtime );
+    print STDERR "[$time] Finished writing stats for $n introns.\n";
+    close $IN;
+    close $I_OUT;
+}
 
 
 #################################################
@@ -75,26 +123,25 @@ sub outputExonStats{
     open (my $EX, '<', $opts{e}) or die 
      "Can't read exon sequence file '$opts{e}': $!\n";
     my $n = 0; 
-    writeHeader();
     while (my $line = <$EX>){
         my ($id, $seq) = split("\t", $line); 
         my ($class, $subclass);
-        if (exists $u12{$id}){
+        if (exists $u12_exons{$id}){
             $class = 'U12';
-            $subclass = $u12{$id};
-        }elsif (exists $unknown{$id}){
+            $subclass = $u12_exons{$id};
+        }elsif (exists $unknown_exons{$id}){
             $class = 'UNKNOWN';
-            $subclass = $unknown{$id};
-        }elsif (exists $u2{$id}){
+            $subclass = $unknown_exons{$id};
+        }elsif (exists $u2_exons{$id}){
             $class = 'U2';
-            $subclass = $u2{$id};
+            $subclass = $u2_exons{$id};
         }else{
             #some exons (e.g. one-gene-exon exons) will not have an associated
             # intron, so no need to warn
             #TODO - check whether we should warn for some exons? (i.e. if not a single exon gene)
             next;
         }
-        writeExonStats($class, $subclass, $id, $seq);
+        writeExonStats($class, $subclass, $id, $seq, $E_OUT);
         $n++;
         if (not $n % 10000){
             my $time = strftime( "%H:%M:%S", localtime );
@@ -103,25 +150,28 @@ sub outputExonStats{
     }
     my $time = strftime( "%H:%M:%S", localtime );
     print STDERR "[$time] Finished writing stats for $n exons.\n";
-    close $OUT;
+    close $EX;
+    close $E_OUT;
 }
 
 #################################################
-sub sortExonSeqs{
-    return if not $TMPEX;
-    close $TMPEX;
-    open (my $EXIN, '<', $ex_seq_file) or die 
-     "Can't open temporary exon sequence file '$ex_seq_file' for reading: $!\n";
+sub sortSeqs{
+    my ($TMP_FH, $tmp_seq_file, $outfile, $type) = @_;
+    return if not $TMP_FH;
+    close $TMP_FH;
+    open (my $EXIN, '<', $tmp_seq_file) or die 
+     "Can't open temporary $type sequence file '$tmp_seq_file' for reading: $!\n";
     my $sortex = Sort::External->new(mem_threshold => 1024**2 * 16);
     #exon IDs should all be same length so no need for special sort sub
     my @feeds = ();
     my $n = 0;
     my $SORTOUT;
-    if ($opts{e}){
-        open ($SORTOUT, '>', $opts{e}) or die 
-         "Can't open exon sequence output file '$opts{e}' for writing: $!\n";
+    my $time;
+    if ($outfile){
+        open ($SORTOUT, '>', $outfile) or die 
+         "Can't open sequence output file '$outfile' for writing: $!\n";
     }else{
-        ($SORTOUT, $opts{e}) = tempfile("ex_seqs_XXXX", UNLINK => 1);
+        ($SORTOUT, $outfile) = tempfile("ex_seqs_XXXX", UNLINK => 1);
     }
     while (my $line = <$EXIN>){
         next if $line =~ /^#/;
@@ -130,25 +180,34 @@ sub sortExonSeqs{
         if (@feeds > 9999){
             $sortex->feed(@feeds);
             @feeds = ();
-            my $time = strftime( "%H:%M:%S", localtime );
-            print STDERR "[$time] Fed $n exons to sort...\n";
+            $time = strftime( "%H:%M:%S", localtime );
+            print STDERR "[$time] Fed $n $type"."s to sort...\n";
         }
     }
     $sortex->feed(@feeds) if @feeds;
-    my $time = strftime( "%H:%M:%S", localtime );
-    print STDERR "[$time] Finished feeding $n exons to sort...\n";
+    $time = strftime( "%H:%M:%S", localtime );
+    print STDERR "[$time] Finished feeding $n $type"."s to sort...\n";
     @feeds = ();
     $sortex->finish; 
     $n = 0;
     print $SORTOUT <<EOT
-#sorted exon sequence file
-#EXON_ID\tSEQ
+#sorted $type sequence file
+#ID\tSEQ
 EOT
 ;
+    $n = 0;
     while ( defined( $_ = $sortex->fetch ) ) {
         print $SORTOUT $_;
+        $n++;
+        if (not $n % 100000){
+            $time = strftime( "%H:%M:%S", localtime );
+            print STDERR "[$time] Wrote $n $type"."s to sequence file...\n";
+        }
     }
+    $time = strftime( "%H:%M:%S", localtime );
+    print STDERR "[$time] Finished writing $n $type"."s to sequence file...\n";
     close $SORTOUT;
+    return $outfile;
 }
 
 #################################################
@@ -178,7 +237,33 @@ EOT
 }
 
 #################################################
-sub writeHeader{
+sub setupIntronSeqFile{
+    my $in;
+    my $TMP;
+    if ($opts{i}){
+    #if user supplied --exon_seqs file see it it already exists 
+    # - will read from it instead of retrieving seqs if it does
+    # we write to a tmp file even if we will be creating a new --exon_seqs
+    # file cos we need to sort the output once we've got all the seqs
+        $in = $opts{i};
+        if (not -e $in){
+            ($TMP, $in) = tempfile("in_seqs_XXXX", UNLINK => 1);
+        }else{
+            return (undef, undef);
+        }
+    }else{
+        ($TMP, $in) = tempfile("in_seqs_XXXX", UNLINK => 1);
+    }
+    print $TMP <<EOT
+#unsorted temporary inon sequence file
+#INTRON_ID\tSEQ
+EOT
+;
+    return ($TMP, $in);
+}
+
+#################################################
+sub writeHeaders{
     my @opt_string = ();
     foreach my $k ( sort keys %opts ) {
         if ( not ref $opts{$k} ) {
@@ -198,44 +283,44 @@ sub writeHeader{
         }
     }
     my $caller = fileparse($0);
-    print $OUT "##$caller\"" . join( " ", @opt_string ) . "\"\n";
-    my @cols =  qw(
-        INTRON_TYPE
-        SUBTYPE
-        EXON_ID
-        EXON_LENGTH
-        PERCENT_GC
-        REPEATS
-        TOTAL_REPEAT_LENGTH
-        LONGEST_REPEAT
-        MEAN_REPEAT_LENGTH
-    );
-    for my $l ($opts{u}..$opts{y}){
-        for my $s (qw/
-            _NT_REPEATS
-            _NT_REPEATs_TOTAL_LENGTH
-            _NT_REPEATS_LONGEST
-            _NT_REPEATS_MEAN_LENGTH
-        /){
-            push @cols, "$l$s";
+    foreach my $FH ($E_OUT, $I_OUT){
+        print $FH "##$caller\"" . join( " ", @opt_string ) . "\"\n";
+        my @cols =  qw(
+            INTRON_TYPE
+            SUBTYPE
+            ID
+            LENGTH
+            PERCENT_GC
+            REPEATS
+            TOTAL_REPEAT_LENGTH
+            LONGEST_REPEAT
+            MEAN_REPEAT_LENGTH
+        );
+        for my $l ($opts{u}..$opts{y}){
+            for my $s (qw/
+                _NT_REPEATS
+                _NT_REPEATs_TOTAL_LENGTH
+                _NT_REPEATS_LONGEST
+                _NT_REPEATS_MEAN_LENGTH
+            /){
+                push @cols, "$l$s";
+            }
         }
+        print $FH join
+        (   
+            "\t",
+            @cols,
+        ) . "\n";
     }
-    print $OUT join
-    (   
-        "\t",
-        @cols,
-    ) . "\n";
 }
 
 #################################################
 sub setupOutput{
-    my $FH;
-    if ($opts{o}){
-        open ($FH, ">", $opts{o}) or die "Can't open $opts{o} for writing: $!\n";    
-    }else{
-        $FH = \*STDOUT;
-    }
-    return $FH;
+    my $ex = "$opts{o}_exon_stats.tsv";
+    my $in = "$opts{o}_intron_stats.tsv";
+    open (my $EX, ">", "$ex") or die "Can't open $ex for writing: $!\n";    
+    open (my $IN, ">", "$in") or die "Can't open $in for writing: $!\n";    
+    return ($IN, $EX);
 }
 
 #################################################
@@ -252,7 +337,7 @@ sub processIntronGff{
     while (my $feat = $gff->next_feature() ) {
         if($feat->has_tag('gene_id')){
             #parse previous introns
-            parseIntrons(\@introns, \$intron_count);
+            parseIntrons(\@introns, \$intron_count, $fai);
             #get name and gene id
             my ($id) = $feat->get_tag_values('ID'); 
             $id =~ s/^gene://;
@@ -263,7 +348,7 @@ sub processIntronGff{
     #        $names{$id} = $name; 
         }elsif ($feat->has_tag('transcript_id')){
             #parse introns in case we missed a gene_id tag
-            parseIntrons(\@introns, \$intron_count);
+            parseIntrons(\@introns, \$intron_count, $fai);
             #get transcript name and associate with gene id
     #        my ($tr) = $feat->get_tag_values('transcript_id'); 
     #        my ($parent) = $feat->get_tag_values('Parent');
@@ -288,7 +373,7 @@ sub processIntronGff{
             }
         }
     }
-    parseIntrons(\@introns, \$intron_count);
+    parseIntrons(\@introns, \$intron_count, $fai);
     $gff->close();
     my $time = strftime( "%H:%M:%S", localtime );
     print STDERR "[$time] Done reading input - processed $intron_count introns.\n";
@@ -303,21 +388,26 @@ sub parseIntrons{
     # a neighbouring U12 intron classify as UNKNOWN
     my $in = shift;
     my $count = shift;
+    my $fai = shift;
     my %all = ();
     foreach my $intr (@$in){
         my ($next)     = $intr->get_tag_values('next_exon_id');
         my ($previous) = $intr->get_tag_values('previous_exon_id');
         my ($type)     = $intr->get_tag_values('intron_type'); 
         if ($type =~ /U12$/){
-            $u12{$next}     = $type;
-            $u12{$previous} = $type;
+            $u12_exons{$next}     = $type;
+            $u12_exons{$previous} = $type;
+            $u12_introns{"$next-$previous"} = $type;
         }elsif($type =~ /U2$/){
-            $u2{$next}     = $type;
-            $u2{$previous} = $type;
+            $u2_exons{$next}     = $type;
+            $u2_exons{$previous} = $type;
+            $u2_introns{"$next-$previous"} = $type;
         }else{
-            $unknown{$next}     = $type;
-            $unknown{$previous} = $type;
+            $unknown_exons{$next}     = $type;
+            $unknown_exons{$previous} = $type;
+            $unknown_introns{"$next-$previous"} = $type;
         }
+        writeTempIntronSequence($intr, $fai, $next, $previous);
         $$count++;
         reportProgress($$count);
     }
@@ -377,7 +467,7 @@ sub getRepeatStats{
         
 #################################################
 sub writeExonStats{
-    my ($class, $subclass, $exon, $seq) = @_;
+    my ($class, $subclass, $exon, $seq, $FH) = @_;
     my $trimmed;
     if ($opts{t} > 0){
         my $trimmed_length = length($seq) - $opts{t} - $opts{t};
@@ -389,7 +479,7 @@ sub writeExonStats{
     my $gc = getGcPercentage($seq);
     my %reps = getRepeats($seq);
     my @repeat_stats = getRepeatStats(\%reps); 
-    print $OUT join
+    print $FH join
     (
         "\t",
         $class,
@@ -411,6 +501,9 @@ sub getRepeats{
 # repeats must consist of at least $opts{n} repeat units (e.g. A * $opts{n} or CAG * $opts{n})
     my $seq = shift;
     my $min_n_rep = $opts{n} - 1;
+    if ($MAX_REP_SCAN < $min_n_rep){
+        $MAX_REP_SCAN = $min_n_rep + 1;
+    }
 =cut
     while ($seq =~ /((\w{$opts{u},$opts{y}})(\2){$min_n_rep,})/g){#does not always get longest full match cos it will find the longest possible repeat in $2
         my $rep = $1;
@@ -438,19 +531,27 @@ sub getRepeats{
         my $rep_length = 0;
         for (my $i = 0; $i < length($seq); ){
             my $s = substr($seq, $i,); 
-            if ($s =~ /^((\w{$n})(\2){$min_n_rep,})/){
+            if ($s =~ /^((\w{$n})(\2){$min_n_rep,$MAX_REP_SCAN})/){
+            #$MAX_REP_SCAN is there to prevent deep recursion in complex regex
                 my $rep = $1;
                 #make sure we don't mistake a 2nt repeat for a 4nt repeat etc.
                 my $repeat_length = getRepeatLength($rep);
+                my $r = substr($rep, 0, $repeat_length);#actual repeat unit
                 if ($repeat_length != $n){
                     $i++;
                     next;
                 }elsif(@repeat_units){#if we've specified the repeat units we're looking at, check if it matches
-                    my $r = substr($rep, 0, $repeat_length);
                     if (not grep {$r eq $_} @repeat_units){
                         $i++;
                         next;
                     }
+                }
+                #we can get full repeat with a simpler regex if we have fewer 
+                # than $MAX_REP_SCAN repeats 
+                if ($s =~ /^(($r){$min_n_rep,})/){
+                    $rep = $1;
+                }else{
+                    warn "INTERNAL ERROR FINDING FULL LENGTH OF REPEAT!";
                 }
                 #check total length of repeat is within our min/max limits
                 my $l = length($rep); 
@@ -513,6 +614,27 @@ sub getGcPercentage{
 }
 
 #################################################
+sub writeTempIntronSequence{
+    return if not $TMPIN;
+    my $intron = shift;
+    my $fai = shift;
+    my $next_ex = shift;
+    my $prev_ex = shift;
+    my $id = "$next_ex-$prev_ex";
+    return if exists $intron_seqs{$id};
+    my $chrom = $intron->seq_id; 
+    my $strand = $intron->strand;
+    my $start = $intron->start;
+    my $end = $intron->end;
+    my $seq = $fai->fetch("$chrom:$start-$end");
+    if ($strand < 0){
+        $seq = reverse_complement($seq);
+    }
+    print $TMPIN "$id\t$seq\n";
+    $intron_seqs{$id} = undef;
+}
+
+#################################################
 sub writeTempExonSequence{
     return if not $TMPEX;
     my $exon = shift;
@@ -553,6 +675,7 @@ sub getExonSequence{
 sub checkOptions{
     usage("-f/--fasta argument is required.") if not $opts{f};
     usage("-g/--gff argument is required.") if not $opts{g};
+    usage("-o/--output argument is required.") if not $opts{o};
     my %lengths = 
     (
         u => "min_repeat_unit_length",
@@ -643,13 +766,22 @@ OPTIONS:
     
     -n,--min_number_of_repeats INT 
         Minimum number of repeat units to consider (default = 2).
+    
+    -r,--repeat_units STRING [STRING2 STRING3 ... STRINGn]
+        One or more specific repeats to look for
 
     -o,--output FILE
-        Optional output file. Default = STDOUT.
+        Output file prefix. Two output files will be produced - one with the 
+        suffix 'intron_stats.tsv' the other with the suffix 'exon_stats.tsv'.
     
     -e,--exon_seqs FILE
         Optional file for reading/writing DNA sequences of exons retrieved. 
         If this file exists it will be read for assessing exon stats; if not 
+        it will be created for future use.
+
+    -i,--intron_seqs FILE
+        Optional file for reading/writing DNA sequences of introns retrieved. 
+        If this file exists it will be read for assessing intron stats; if not 
         it will be created for future use.
 
     -t,--trim INT
