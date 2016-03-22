@@ -10,10 +10,9 @@ our @EXPORT_OK = qw(reverse_complement complement);
 sub reverse_complement{
 	my ($dna) = @_;
 	$dna = reverse($dna);
-	$dna = complement ($dna);
-	return $dna;
-	
+	return complement($dna);
 }
+
 sub complement{
 	my ($dna) = @_;
 	$dna =~ tr/acgtACGT/tgcaTGCA/;
