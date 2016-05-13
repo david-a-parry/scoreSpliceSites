@@ -14,7 +14,6 @@ use Bio::DB::Sam;
 use Bio::SeqFeature::Generic;
 #use re 'debugcolor';
 use lib "$RealBin/lib";
-use ScoreSpliceSite;
 use ReverseComplement qw/ reverse_complement /;
 
 my @repeat_units = ();  #if we only want to match specific repeats put
@@ -333,10 +332,10 @@ sub processIntronGff{
         -fh          => $IN,
     );
     my $intron_count = 0;
-    my $biotype = ''; 
+    my $gene_type = ''; 
     my @introns = (); #collect all intron features per transcript for processing
     while (my $feat = $gff->next_feature() ) {
-        if($feat->has_tag('gene_id')){
+        if ($feat->primary_tag eq 'gene'){
             #parse previous introns
             parseIntrons(\@introns, \$intron_count, $fai);
             #get name and gene id
@@ -347,17 +346,17 @@ sub processIntronGff{
     #            ($name) = $feat->get_tag_values('Name'); 
     #        }
     #        $names{$id} = $name; 
-        }elsif ($feat->has_tag('transcript_id')){
+        }elsif ($feat->primary_tag eq 'transcript'){
             #parse introns in case we missed a gene_id tag
             parseIntrons(\@introns, \$intron_count, $fai);
             #get transcript name and associate with gene id
     #        my ($tr) = $feat->get_tag_values('transcript_id'); 
     #        my ($parent) = $feat->get_tag_values('Parent');
-            $biotype = join(",", $feat->get_tag_values('biotype'));
+            $gene_type = join(",", $feat->get_tag_values('gene_type'));
         }elsif ($feat->primary_tag eq 'exon'){
             #collect exons 
             if ($opts{b}){
-                if (grep {$_ eq $opts{b}} split(",", $biotype)){
+                if (grep {$_ eq $opts{b}} split(",", $gene_type)){
                     writeTempExonSequence($feat, $fai);
                 }
             }else{
@@ -366,7 +365,7 @@ sub processIntronGff{
         }elsif ($feat->primary_tag eq 'intron'){
             #collect intron type related to each exon
             if ($opts{b}){
-                if (grep {$_ eq $opts{b}} split(",", $biotype)){
+                if (grep {$_ eq $opts{b}} split(",", $gene_type)){
                     push @introns, $feat;
                 }
             }else{

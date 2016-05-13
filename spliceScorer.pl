@@ -45,9 +45,11 @@ my $gff = Bio::Tools::GFF->new
     -fh          => $IN,
 );
 
-my $OUT = \*STDOUT;
+my $OUT;
 if ($opts{o}){
     open ($OUT, ">", $opts{o}) or die "Can't open $opts{o} for writing: $!\n";    
+}else{
+    $OUT = \*STDOUT;
 }
 
 my $gffwriter = Bio::Tools::GFF->new(
@@ -67,8 +69,10 @@ my %transcripts = ();
 my %names = ();
 my $i = 0;
 while (my $feat = $gff->next_feature() ) {
+    #print STDERR "TAG: " . $feat->primary_tag . "\n";
     #if ($feat->primary_tag =~ /^(gene|processed_transcript|miRNA_gene|RNA)$/){
-    if($feat->has_tag('gene_id')){
+    #if($feat->has_tag('gene_id')){
+    if ($feat->primary_tag eq 'gene'){
         parseExons(\%exons);
         %exons = ();
         my ($id) = $feat->get_tag_values('ID'); 
@@ -76,13 +80,16 @@ while (my $feat = $gff->next_feature() ) {
         my $name = '.';
         if ($feat->has_tag('Name')){
             ($name) = $feat->get_tag_values('Name'); 
+        }elsif ($feat->has_tag('gene_name')){
+            ($name) = $feat->get_tag_values('gene_name'); 
         }
         $names{$id} = $name; 
         $gffwriter->write_feature($feat);
-    }elsif ($feat->has_tag('transcript_id')){
-        my ($tr) = $feat->get_tag_values('transcript_id'); 
+    #}elsif ($feat->has_tag('transcript')){
+    }elsif ($feat->primary_tag eq 'transcript'){
+        my ($tr) = $feat->get_tag_values('ID'); 
         ($transcripts{$tr}->{parent}) = $feat->get_tag_values('Parent');
-        $transcripts{$tr}->{biotype} = join(",", $feat->get_tag_values('biotype'));
+        $transcripts{$tr}->{gene_type} = join(",", $feat->get_tag_values('gene_type'));
         parseExons(\%exons);
         %exons = ();
         #foreach my $tr ($feat->get_tag_values('ID') ){
@@ -92,7 +99,7 @@ while (my $feat = $gff->next_feature() ) {
     }elsif ($feat->primary_tag eq 'exon'){
         foreach my $tr ($feat->get_tag_values('Parent') ){
             $tr =~ s/transcript://;
-            foreach my $ex ($feat->get_tag_values('rank') ){
+            foreach my $ex ($feat->get_tag_values('exon_number') ){
                 $exons{$tr}->{$ex} = $feat; 
             }
         }
@@ -125,12 +132,12 @@ if ($TRANS){
 #################################################
 sub writeTranscriptCounts{
     foreach my $k (sort keys %transcripts){
-        my ($unknown, $u2, $u12, $gene, $biotype) = (0, 0, 0, '.', '.'); 
+        my ($unknown, $u2, $u12, $gene, $gene_type) = (0, 0, 0, '.', '.'); 
         foreach my $type (keys %{$transcripts{$k}}){
             if ($type eq 'parent'){
                 ($gene = $transcripts{$k}->{$type}) =~ s/^gene://;
-            }elsif($type eq 'biotype'){
-                $biotype = $transcripts{$k}->{$type};
+            }elsif($type eq 'gene_type'){
+                $gene_type = $transcripts{$k}->{$type};
             }elsif($type eq '0'){
                 $unknown += $transcripts{$k}->{$type};
             }elsif($type =~ /U12$/){
@@ -145,7 +152,7 @@ sub writeTranscriptCounts{
             $names{$gene},
             $gene,
             $k,
-            $biotype,
+            $gene_type,
             $u12,
             $u2,
             $unknown
@@ -224,11 +231,7 @@ sub writeIntron{
     foreach my $t 
     (qw /
         exon_id
-        rank
-        version
-        ensembl_phase
-        constitutive
-        ensembl_end_phase
+        exon_number
     /){
         $intron->add_tag_value
         (

@@ -8,16 +8,18 @@ use Bio::Tools::GFF;
 use Bio::SeqFeature::Generic;
 
 my %opts = ();
+my $intron_mode = 'U12';
 GetOptions(
     \%opts,
     'g|gff=s',
     't|tsl=i',
     'o|output=s',
+    'u|u2mode',
     'h|?|help',
 ) or usage("Error getting options!");
 usage() if $opts{h};
-
 usage("-g/--gff argument is required.") if not $opts{g};
+$intron_mode = 'U2' if $opts{u};
 my $IN;
 if ($opts{g} =~ /\.gz$/){
     open ($IN, "gzip -dc $opts{g} |") or die "Can't open $opts{g} via gzip: $!\n";
@@ -37,7 +39,7 @@ if ($opts{o}){
 }
 
 my %gene = ();
-print $OUT join("\t", 
+my $header = join("\t", 
 qw/
     Gene
     Symbol
@@ -50,9 +52,14 @@ qw/
     Fraction_U12_Transcripts
     Fraction_U12_Coding_Transcripts
 /) . "\n";
+if ($opts{u}){
+    $header =~ s/U12/U2/g;
+}
+print $OUT $header;
  
 while (my $feat = $gff->next_feature() ) {
-   if($feat->has_tag('gene_id')){
+    if ($feat->primary_tag eq 'gene'){
+    #if($feat->has_tag('gene_id')){
         parseGene();
         %gene = ();
         my ($id) = $feat->get_tag_values('ID'); 
@@ -60,6 +67,8 @@ while (my $feat = $gff->next_feature() ) {
         my $name = '.';
         if ($feat->has_tag('Name')){
             ($name) = $feat->get_tag_values('Name'); 
+        }elsif ($feat->has_tag('gene_name')){
+            ($name) = $feat->get_tag_values('gene_name'); 
         }
         $gene{name} = $name; 
         $gene{gene} = $id;
@@ -70,7 +79,7 @@ while (my $feat = $gff->next_feature() ) {
 
 #################################################
 sub parseGene{
-    return if not exists $gene{U12};
+    return if not exists $gene{$intron_mode};
     my @valid_tr = ();
     my @valid_coding_tr = (); 
     foreach my $tr (keys %{$gene{transcripts}}){
@@ -79,11 +88,11 @@ sub parseGene{
             next if  $gene{transcripts}->{$tr}->{tsl} > $opts{t};
         }
         push @valid_tr, $tr;
-        push @valid_coding_tr, $tr if $gene{transcripts}->{$tr}->{biotype} =~ /protein_coding/;
+        push @valid_coding_tr, $tr if $gene{transcripts}->{$tr}->{gene_type} =~ /protein_coding/;
     }
     return if not @valid_tr;
-    foreach my $type (keys %{$gene{U12}}){
-        foreach my $u12intron (keys %{$gene{U12}->{$type}}){
+    foreach my $type (keys %{$gene{$intron_mode}}){
+        foreach my $u12intron (keys %{$gene{$intron_mode}->{$type}}){
             my $u12_transcripts = 0;
             my $u12_coding_transcripts = 0;
             foreach my $tr (keys %{$gene{transcripts}}){
@@ -94,7 +103,7 @@ sub parseGene{
                 }
                 if (exists $gene{transcripts}->{$tr}->{introns}->{$u12intron}){
                     $u12_transcripts++;
-                    if ($gene{transcripts}->{$tr}->{biotype} =~ /protein_coding/){
+                    if ($gene{transcripts}->{$tr}->{gene_type} =~ /protein_coding/){
                         $u12_coding_transcripts++ ;
                     }
                 }
@@ -135,13 +144,14 @@ sub parseFeature{
     die "Attempt to parse non-gene feature without any gene entries! "
       if not keys %gene;
     
-    if ($feat->has_tag('transcript_id')){
-        my ($tr) = $feat->get_tag_values('transcript_id'); 
+    if ($feat->primary_tag eq 'transcript'){
+    #if ($feat->has_tag('transcript_id')){
+        my ($tr) = $feat->get_tag_values('ID'); 
         my ($parent) = $feat->get_tag_values('Parent');
         $parent =~ s/^gene://;
         die "Transcript parent ($parent) does not match current gene ($gene{gene}) " 
           if $parent ne $gene{gene};
-        $gene{transcripts}->{$tr}->{biotype} = join(",", $feat->get_tag_values('biotype'));
+        $gene{transcripts}->{$tr}->{gene_type} = join(",", $feat->get_tag_values('gene_type'));
         eval
         {
             ($gene{transcripts}->{$tr}->{tsl}) = $feat->get_tag_values('transcript_support_level');
@@ -163,15 +173,15 @@ sub parseFeature{
     }elsif ($feat->primary_tag eq 'intron'){
         #my ($prev) = $feat->get_tag_values('previous_exon_id');
         #my ($next) = $feat->get_tag_values('next_exon_id');
-        my ($i)    = $feat->get_tag_values('previous_rank');
+        my ($i)    = $feat->get_tag_values('previous_exon_number');
         #my $intron = "$prev-$next";
         my $start = $feat->start;
         my $end   = $feat->end;
         my $chrom = $feat->seq_id;
         my $intron = "$chrom:$start-$end";
         my ($type) =  $feat->get_tag_values('intron_type');
-        if ($type =~ /\_U12$/){
-            $gene{U12}->{$type}->{$intron} = undef;
+        if ($type =~ /_$intron_mode$/){
+            $gene{$intron_mode}->{$type}->{$intron} = undef;
         }
         foreach my $tr ($feat->get_tag_values('Parent') ){
             $tr =~ s/transcript://;
@@ -202,6 +212,9 @@ OPTIONS:
         inclusion here (transcripts with a tsl of 1 have the most support, 
         those with a tsl of 5 have the least see Ensembl's help:
         http://www.ensembl.org/Help/Glossary?id=492).
+
+    -u,--u2mode
+        Use this flag to output counts for U2 introns instead of U12
 
     -o,--output FILE
         Optional output file. Default = STDOUT.
