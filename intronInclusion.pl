@@ -11,6 +11,7 @@ my %opts = ();
 GetOptions(
     \%opts,
     'g|gff=s',
+    't|tsl=i',
     'o|output=s',
     'h|?|help',
 ) or usage("Error getting options!");
@@ -70,16 +71,27 @@ while (my $feat = $gff->next_feature() ) {
 #################################################
 sub parseGene{
     return if not exists $gene{U12};
-    my $n_trans  = scalar(keys %{$gene{transcripts}});
-    my $n_coding = 0; 
+    my @valid_tr = ();
+    my @valid_coding_tr = (); 
     foreach my $tr (keys %{$gene{transcripts}}){
-        $n_coding++ if $gene{transcripts}->{$tr}->{biotype} =~ /protein_coding/;
+        if (defined $opts{t}){
+            next if $gene{transcripts}->{$tr}->{tsl} eq 'NA';
+            next if  $gene{transcripts}->{$tr}->{tsl} > $opts{t};
+        }
+        push @valid_tr, $tr;
+        push @valid_coding_tr, $tr if $gene{transcripts}->{$tr}->{biotype} =~ /protein_coding/;
     }
+    return if not @valid_tr;
     foreach my $type (keys %{$gene{U12}}){
         foreach my $u12intron (keys %{$gene{U12}->{$type}}){
             my $u12_transcripts = 0;
             my $u12_coding_transcripts = 0;
             foreach my $tr (keys %{$gene{transcripts}}){
+                #filter on transcript support level if specified
+                if (defined $opts{t}){
+                    next if $gene{transcripts}->{$tr}->{tsl} eq 'NA';
+                    next if  $gene{transcripts}->{$tr}->{tsl} > $opts{t};
+                }
                 if (exists $gene{transcripts}->{$tr}->{introns}->{$u12intron}){
                     $u12_transcripts++;
                     if ($gene{transcripts}->{$tr}->{biotype} =~ /protein_coding/){
@@ -87,15 +99,16 @@ sub parseGene{
                     }
                 }
             }
+            next if not $u12_transcripts; #no transcript meeting our required transcript support level 
             my $u12_frac;
             my $u12_coding_frac;
             eval
             {
-                $u12_frac = $u12_transcripts / $n_trans;
+                $u12_frac = $u12_transcripts / @valid_tr;
             };
             eval
             {
-                $u12_coding_frac = $u12_coding_transcripts / $n_coding;
+                $u12_coding_frac = $u12_coding_transcripts / @valid_coding_tr;
             };
             $u12_frac ||= 0;
             $u12_coding_frac ||= 0;
@@ -104,9 +117,9 @@ sub parseGene{
                 $gene{name},
                 $u12intron,
                 $type,
-                $n_trans,
+                scalar(@valid_tr),
                 $u12_transcripts,
-                $n_coding,
+                scalar(@valid_coding_tr),
                 $u12_coding_transcripts,
                 $u12_frac,
                 $u12_coding_frac,
@@ -129,6 +142,13 @@ sub parseFeature{
         die "Transcript parent ($parent) does not match current gene ($gene{gene}) " 
           if $parent ne $gene{gene};
         $gene{transcripts}->{$tr}->{biotype} = join(",", $feat->get_tag_values('biotype'));
+        eval
+        {
+            ($gene{transcripts}->{$tr}->{tsl}) = $feat->get_tag_values('transcript_support_level');
+        };#not all transcripts have tsl tag(?)
+        $gene{transcripts}->{$tr}->{tsl} ||= 'NA';
+        #clear cruft from tsl
+        $gene{transcripts}->{$tr}->{tsl} =~ s/\s+.*//;
     }elsif ($feat->primary_tag eq 'exon'){
         #DO WE ACTUALLY NEED ANY EXON INFO?
 #        foreach my $tr ($feat->get_tag_values('Parent') ){
@@ -175,6 +195,13 @@ OPTIONS:
     
     -g,--gff FILE
         GFF3 file generated using spliceScorer.pl
+
+    -t,--tsl INT
+        Maximum transcript support level for inclusion in analysis. By Default
+        all transcripts will be analyzed. Specify the maximum value for 
+        inclusion here (transcripts with a tsl of 1 have the most support, 
+        those with a tsl of 5 have the least see Ensembl's help:
+        http://www.ensembl.org/Help/Glossary?id=492).
 
     -o,--output FILE
         Optional output file. Default = STDOUT.
