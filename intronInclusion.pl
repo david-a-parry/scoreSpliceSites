@@ -210,7 +210,7 @@ OPTIONS:
         Maximum transcript support level for inclusion in analysis. By Default
         all transcripts will be analyzed. Specify the maximum value for 
         inclusion here (transcripts with a tsl of 1 have the most support, 
-        those with a tsl of 5 have the least see Ensembl's help:
+        those with a tsl of 5 have the least. See Ensembl's help:
         http://www.ensembl.org/Help/Glossary?id=492).
 
     -u,--u2mode
