@@ -60,7 +60,7 @@ my $gffwriter = Bio::Tools::GFF->new(
 my $TRANS;
 if ($opts{t}){
     open ($TRANS, ">", "$opts{t}") or die "Could not open $opts{t} for writing: $!\n";
-    print $TRANS "#NAME\tGENE_ID\tTRANSCRIPT_ID\tTRANSCRIPT_BIOTYPE\tU12_introns\tU2_introns\tUNKNOWN_introns\n";
+    print $TRANS "#NAME\tGENE_ID\tTRANSCRIPT_ID\tTRANSCRIPT_BIOTYPE\tTSL\tU12_introns\tU2_introns\tUNKNOWN_introns\n";
 }
 
 my %exons = ();
@@ -88,8 +88,18 @@ while (my $feat = $gff->next_feature() ) {
     #}elsif ($feat->has_tag('transcript')){
     }elsif ($feat->primary_tag eq 'transcript'){
         my ($tr) = $feat->get_tag_values('ID'); 
+
         ($transcripts{$tr}->{parent}) = $feat->get_tag_values('Parent');
+
         $transcripts{$tr}->{gene_type} = join(",", $feat->get_tag_values('gene_type'));
+
+        eval{
+            ($transcripts{$tr}->{tsl}) = $feat->get_tag_values('transcript_support_level');
+        };#not all transcripts have tsl tag(?)
+        $transcripts{$tr}->{tsl} ||= 'NA';
+        #clear cruft from tsl
+        $transcripts{$tr}->{tsl} =~ s/\s+.*//;
+
         parseExons(\%exons);
         %exons = ();
         #foreach my $tr ($feat->get_tag_values('ID') ){
@@ -132,12 +142,14 @@ if ($TRANS){
 #################################################
 sub writeTranscriptCounts{
     foreach my $k (sort keys %transcripts){
-        my ($unknown, $u2, $u12, $gene, $gene_type) = (0, 0, 0, '.', '.'); 
+        my ($unknown, $u2, $u12, $gene, $gene_type, $tsl) = (0, 0, 0, '.', '.', '.'); 
         foreach my $type (keys %{$transcripts{$k}}){
             if ($type eq 'parent'){
                 ($gene = $transcripts{$k}->{$type}) =~ s/^gene://;
             }elsif($type eq 'gene_type'){
                 $gene_type = $transcripts{$k}->{$type};
+            }elsif($type eq 'tsl'){
+                $tsl = $transcripts{$k}->{$type};
             }elsif($type eq '0'){
                 $unknown += $transcripts{$k}->{$type};
             }elsif($type =~ /U12$/){
@@ -153,6 +165,7 @@ sub writeTranscriptCounts{
             $gene,
             $k,
             $gene_type,
+            $tsl,
             $u12,
             $u2,
             $unknown
