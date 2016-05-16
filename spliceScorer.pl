@@ -89,10 +89,10 @@ while (my $feat = $gff->next_feature() ) {
         $gffwriter->write_feature($feat);
     }elsif ($feat->primary_tag eq 'transcript' or #works for gencode
            ( $feat->primary_tag =~ /gene|transcript|RNA/ 
-             and $feat->has_tag('transcript') ) #for ensembl GFFs
+             and $feat->has_tag('transcript_id') ) #for ensembl GFFs
     ){
         my ($tr) = $feat->get_tag_values('ID'); 
-
+        $tr =~ s/transcript://;
         ($transcripts{$tr}->{parent}) = $feat->get_tag_values('Parent');
 
         if ($feat->has_tag('gene_type')){
