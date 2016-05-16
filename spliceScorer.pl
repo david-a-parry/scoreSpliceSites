@@ -71,8 +71,10 @@ my $i = 0;
 while (my $feat = $gff->next_feature() ) {
     #print STDERR "TAG: " . $feat->primary_tag . "\n";
     #if ($feat->primary_tag =~ /^(gene|processed_transcript|miRNA_gene|RNA)$/){
-    #if($feat->has_tag('gene_id')){
-    if ($feat->primary_tag eq 'gene'){
+    if ($feat->primary_tag eq 'gene' or #works for all gencode
+       ( $feat->primary_tag =~ /gene|RNA|processed_transcript/ 
+        and $feat->has_tag('gene_id') ) #for ensembl GFFs
+    ){
         parseExons(\%exons);
         %exons = ();
         my ($id) = $feat->get_tag_values('ID'); 
@@ -85,16 +87,24 @@ while (my $feat = $gff->next_feature() ) {
         }
         $names{$id} = $name; 
         $gffwriter->write_feature($feat);
-    #}elsif ($feat->has_tag('transcript')){
-    }elsif ($feat->primary_tag eq 'transcript'){
+    }elsif ($feat->primary_tag eq 'transcript' or #works for gencode
+           ( $feat->primary_tag =~ /gene|transcript|RNA/ 
+             and $feat->has_tag('transcript') ) #for ensembl GFFs
+    ){
         my ($tr) = $feat->get_tag_values('ID'); 
 
         ($transcripts{$tr}->{parent}) = $feat->get_tag_values('Parent');
 
-        $transcripts{$tr}->{gene_type} = join(",", $feat->get_tag_values('gene_type'));
+        if ($feat->has_tag('gene_type')){
+            $transcripts{$tr}->{gene_type} = join(",", $feat->get_tag_values('gene_type'));
+        }elsif ($feat->has_tag('biotype')){
+            $transcripts{$tr}->{gene_type} = join(",", $feat->get_tag_values('biotype'));
+        }else{
+            die "Could not determine biotype/gene_type for $tr!\n";
+        }
 
         eval{
-            ($transcripts{$tr}->{tsl}) = $feat->get_tag_values('transcript_support_level');
+            ($transcripts{$tr}->{tsl}) = $feat->get_tag_values('transcript_support_level')
         };#not all transcripts have tsl tag(?)
         $transcripts{$tr}->{tsl} ||= 'NA';
         #clear cruft from tsl
@@ -109,7 +119,15 @@ while (my $feat = $gff->next_feature() ) {
     }elsif ($feat->primary_tag eq 'exon'){
         foreach my $tr ($feat->get_tag_values('Parent') ){
             $tr =~ s/transcript://;
-            foreach my $ex ($feat->get_tag_values('exon_number') ){
+            my $ex_tag = '';
+            if ($feat->has_tag('exon_number') ){
+                $ex_tag = 'exon_number';#gencode GFFs
+            }elsif ($feat->has_tag('rank') ){
+                $ex_tag = 'rank';#ensembl GFFs
+            }else{
+                die "Could not determine exon number for ". $feat->{ID} . "\n";
+            }
+            foreach my $ex ($feat->get_tag_values($ex_tag) ){
                 $exons{$tr}->{$ex} = $feat; 
             }
         }
@@ -245,17 +263,20 @@ sub writeIntron{
     (qw /
         exon_id
         exon_number
+        rank
     /){
-        $intron->add_tag_value
-        (
-            "previous_$t",
-            $exon1->get_tag_values($t),
-        ); 
-        $intron->add_tag_value
-        (
-            "next_$t",
-            $exon2->get_tag_values($t),
-        ); 
+        if ($exon1->has_tag($t)){
+            $intron->add_tag_value
+            (
+                "previous_$t",
+                $exon1->get_tag_values($t),
+            ); 
+            $intron->add_tag_value
+            (
+                "next_$t",
+                $exon2->get_tag_values($t),
+            ); 
+        }
     }
     my ($d_start, $d_end) = sort {$a <=> $b} 
     (
