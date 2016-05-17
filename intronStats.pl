@@ -114,6 +114,7 @@ sub outputIntronStats{
             class    => $class,
             subclass => $subclass,
             chrom    => $chrom,
+            id       => $id,
             start    => $start,
             end      => $end,
             seq      => $seq,
@@ -135,6 +136,7 @@ sub outputIntronStats{
         $prev_intron{class},
         $prev_intron{subclass},
         "$prev_intron{chrom}:$prev_intron{start}-$prev_intron{end}",
+        $prev_intron{id},
         $prev_intron{seq},
         $I_OUT,
     );
@@ -158,6 +160,7 @@ sub checkAndWrite{
         $prev->{subclass} eq $current->{subclass}
     ){#overlaps
         if ($current->{end} > $prev->{end}){
+            $prev->{id} = $prev->{id} . "/" . $current->{id};
             $prev->{end} = $current->{end};
             if ($current->{start} == $prev->{start}){
                 $prev->{seq} = $current->{seq};
@@ -172,6 +175,7 @@ sub checkAndWrite{
             $prev->{class},
             $prev->{subclass},
             "$prev->{chrom}:$prev->{start}-$prev->{end}",
+            $prev->{id},
             $prev->{seq},
             $FH,
         );
@@ -210,6 +214,7 @@ sub outputExonStats{
             class    => $class,
             subclass => $subclass,
             chrom    => $chrom,
+            id       => $id,
             start    => $start,
             end      => $end,
             seq      => $seq,
@@ -232,6 +237,7 @@ sub outputExonStats{
         $prev_exon{class},
         $prev_exon{subclass},
         "$prev_exon{chrom}:$prev_exon{start}-$prev_exon{end}",
+        $prev_exon{id},
         $prev_exon{seq},
         $E_OUT,
     );
@@ -313,12 +319,12 @@ sub setupExonSeqFile{
     # file cos we need to sort the output once we've got all the seqs
         $ex = $opts{e};
         if (not -e $ex){
-            ($TMP, $ex) = tempfile("ex_seqs_XXXX", UNLINK => 1);
+            ($TMP, $ex) = tempfile(UNLINK => 1);
         }else{
             return (undef, undef);
         }
     }else{
-        ($TMP, $ex) = tempfile("ex_seqs_XXXX", UNLINK => 1);
+        ($TMP, $ex) = tempfile(UNLINK => 1);
     }
     print $TMP <<EOT
 #unsorted temporary exon sequence file
@@ -339,12 +345,12 @@ sub setupIntronSeqFile{
     # file cos we need to sort the output once we've got all the seqs
         $in = $opts{i};
         if (not -e $in){
-            ($TMP, $in) = tempfile("in_seqs_XXXX", UNLINK => 1);
+            ($TMP, $in) = tempfile( UNLINK => 1);
         }else{
             return (undef, undef);
         }
     }else{
-        ($TMP, $in) = tempfile("in_seqs_XXXX", UNLINK => 1);
+        ($TMP, $in) = tempfile( UNLINK => 1);
     }
     print $TMP <<EOT
 #unsorted temporary intron sequence file
@@ -380,6 +386,7 @@ sub writeHeaders{
         my @cols =  qw(
             INTRON_TYPE
             SUBTYPE
+            COORDS
             ID
             LENGTH
             PERCENT_GC
@@ -589,7 +596,7 @@ sub getRepeatStats{
         
 #################################################
 sub writeExonStats{
-    my ($class, $subclass, $exon, $seq, $FH) = @_;
+    my ($class, $subclass, $coords, $id, $seq, $FH) = @_;
     my $trimmed;
     if ($opts{t} > 0){
         my $trimmed_length = length($seq) - $opts{t} - $opts{t};
@@ -606,7 +613,8 @@ sub writeExonStats{
         "\t",
         $class,
         $subclass,
-        $exon,
+        $coords,
+        $id,
         length($seq),
         sprintf("%.3f", $gc),
         @repeat_stats,
