@@ -37,6 +37,7 @@ GetOptions(
     'g|gff=s',
     'b|biotype=s',
     's|tsl=i',
+    'merge|j',
     'u|min_repeat_unit_length=i',
     'y|max_repeat_unit_length=i',
     'm|min_repeat_length=i',
@@ -58,6 +59,7 @@ if ($opts{g} =~ /\.gz$/){
 }else{
     open ($IN, "<", $opts{g}) or die "Can't open $opts{g} for reading: $!\n";
 }
+my $fai = Bio::DB::Sam::Fai->load($opts{f});#should create index if it doesn't exist
 
 my ($I_OUT, $E_OUT) = setupOutput();
 my ($TMPEX, $ex_seq_file) = setupExonSeqFile();
@@ -86,69 +88,153 @@ outputIntronStats();
 sub outputIntronStats{
     open (my $IN, '<', $opts{i}) or die 
      "Can't read intron sequence file '$opts{i}': $!\n";
-    my $n = 0; 
+    my $n = 0;
+    my %prev_intron;
     while (my $line = <$IN>){
-        my ($id, $seq) = split("\t", $line); 
+        my ($coord, $id, $seq) = split("\t", $line); 
         my ($class, $subclass);
-        if (exists $u12_introns{$id}){
+        if (exists $u12_introns{$coord}){
             $class = 'U12';
-            $subclass = $u12_introns{$id};
-        }elsif (exists $unknown_introns{$id}){
+            $subclass = $u12_introns{$coord};
+        }elsif (exists $unknown_introns{$coord}){
             $class = 'UNKNOWN';
-            $subclass = $unknown_introns{$id};
-        }elsif (exists $u2_introns{$id}){
+            $subclass = $unknown_introns{$coord};
+        }elsif (exists $u2_introns{$coord}){
             $class = 'U2';
-            $subclass = $u2_introns{$id};
+            $subclass = $u2_introns{$coord};
         }else{
             #some exons (e.g. one-gene-exon exons) will not have an associated
             # intron, so no need to warn
             #TODO - check whether we should warn for some exons? (i.e. if not a single exon gene)
             next;
         }
-        writeExonStats($class, $subclass, $id, $seq, $I_OUT);
-        $n++;
-        if (not $n % 10000){
-            my $time = strftime( "%H:%M:%S", localtime );
-            print STDERR "[$time] Wrote stats for $n introns...\n" ;
+        my ($chrom, $start, $end) = split(/[:-]/, $coord);
+        my %this_intron = 
+        (
+            class    => $class,
+            subclass => $subclass,
+            chrom    => $chrom,
+            start    => $start,
+            end      => $end,
+            seq      => $seq,
+        );
+        if (not %prev_intron){
+            %prev_intron = %this_intron;
+        }
+        my $written = checkAndWrite(\%prev_intron, \%this_intron, $I_OUT);
+        if($written){
+            $n++;
+            if (not $n % 10000){
+                my $time = strftime( "%H:%M:%S", localtime );
+                print STDERR "[$time] Processed stats for $n introns...\n" ;
+            }
         }
     }
+    writeExonStats
+    (
+        $prev_intron{class},
+        $prev_intron{subclass},
+        "$prev_intron{chrom}:$prev_intron{start}-$prev_intron{end}",
+        $prev_intron{seq},
+        $I_OUT,
+    );
     my $time = strftime( "%H:%M:%S", localtime );
     print STDERR "[$time] Finished writing stats for $n introns.\n";
     close $IN;
     close $I_OUT;
 }
 
+#################################################
+sub checkAndWrite{
+#read our hashes of intron features
+#if they overlap and are of same type, merge
+#otherwise print previous and store current 
+    my $prev    = shift;
+    my $current = shift;
+    my $FH = shift;
+    if ($opts{merge} and 
+        $prev->{chrom} eq $current->{chrom} and 
+        $prev->{end} >= $current->{start} and #should be sorted in coordinate order
+        $prev->{subclass} eq $current->{subclass}
+    ){#overlaps
+        if ($current->{end} > $prev->{end}){
+            $prev->{end} = $current->{end};
+            if ($current->{start} == $prev->{start}){
+                $prev->{seq} = $current->{seq};
+            }else{
+                $prev->{seq} = $fai->fetch("$prev->{chrom}:$prev->{start}-$prev->{end}");
+            }
+        }
+        return 0;
+    }else{#doesn't overlap
+        writeExonStats
+        (
+            $prev->{class},
+            $prev->{subclass},
+            "$prev->{chrom}:$prev->{start}-$prev->{end}",
+            $prev->{seq},
+            $FH,
+        );
+        %{$prev} = %{$current};
+        return 1;
+    }
+}
 
 #################################################
 sub outputExonStats{
     open (my $EX, '<', $opts{e}) or die 
      "Can't read exon sequence file '$opts{e}': $!\n";
     my $n = 0; 
+    my %prev_exon;
     while (my $line = <$EX>){
-        my ($id, $seq) = split("\t", $line); 
+        my ($coord, $id, $seq) = split("\t", $line); 
         my ($class, $subclass);
-        if (exists $u12_exons{$id}){
+        if (exists $u12_exons{$coord}){
             $class = 'U12';
-            $subclass = $u12_exons{$id};
-        }elsif (exists $unknown_exons{$id}){
+            $subclass = $u12_exons{$coord};
+        }elsif (exists $unknown_exons{$coord}){
             $class = 'UNKNOWN';
-            $subclass = $unknown_exons{$id};
-        }elsif (exists $u2_exons{$id}){
+            $subclass = $unknown_exons{$coord};
+        }elsif (exists $u2_exons{$coord}){
             $class = 'U2';
-            $subclass = $u2_exons{$id};
+            $subclass = $u2_exons{$coord};
         }else{
             #some exons (e.g. one-gene-exon exons) will not have an associated
             # intron, so no need to warn
             #TODO - check whether we should warn for some exons? (i.e. if not a single exon gene)
             next;
         }
-        writeExonStats($class, $subclass, $id, $seq, $E_OUT);
-        $n++;
-        if (not $n % 10000){
-            my $time = strftime( "%H:%M:%S", localtime );
-            print STDERR "[$time] Wrote stats for $n exons...\n" ;
+        my ($chrom, $start, $end) = split(/[:-]/, $coord);
+        my %this_exon = 
+        (
+            class    => $class,
+            subclass => $subclass,
+            chrom    => $chrom,
+            start    => $start,
+            end      => $end,
+            seq      => $seq,
+        );
+        if (not %prev_exon){
+            %prev_exon = %this_exon;
+            next;
+        }
+        my $written = checkAndWrite(\%prev_exon, \%this_exon, $E_OUT);
+        if($written){
+            $n++;
+            if (not $n % 10000){
+                my $time = strftime( "%H:%M:%S", localtime );
+                print STDERR "[$time] Wrote stats for $n exons...\n" ;
+            }
         }
     }
+    writeExonStats
+    (
+        $prev_exon{class},
+        $prev_exon{subclass},
+        "$prev_exon{chrom}:$prev_exon{start}-$prev_exon{end}",
+        $prev_exon{seq},
+        $E_OUT,
+    );
     my $time = strftime( "%H:%M:%S", localtime );
     print STDERR "[$time] Finished writing stats for $n exons.\n";
     close $EX;
@@ -176,7 +262,11 @@ sub sortSeqs{
     }
     while (my $line = <$EXIN>){
         next if $line =~ /^#/;
-        push @feeds, $line;
+        my @split = split("\t", $line); 
+        my ($chrom, $start, $end) = split(/[:-]/, $split[0]);
+        my $packstart = pack("N", $start); 
+        my $packend = pack("N", $end); 
+        push @feeds, "$chrom,$packstart,$packend\t$line";
         $n++;
         if (@feeds > 9999){
             $sortex->feed(@feeds);
@@ -193,12 +283,13 @@ sub sortSeqs{
     $n = 0;
     print $SORTOUT <<EOT
 #sorted $type sequence file
-#ID\tSEQ
+#COORDS\tID\tSEQ
 EOT
 ;
     $n = 0;
     while ( defined( $_ = $sortex->fetch ) ) {
-        print $SORTOUT $_;
+        my @split = split("\t", $_);
+        print $SORTOUT join("\t", @split[1..$#split]);
         $n++;
         if (not $n % 100000){
             $time = strftime( "%H:%M:%S", localtime );
@@ -231,7 +322,7 @@ sub setupExonSeqFile{
     }
     print $TMP <<EOT
 #unsorted temporary exon sequence file
-#EXON_ID\tSEQ
+#COORDs\tEXON_ID\tSEQ
 EOT
 ;
     return ($TMP, $ex);
@@ -256,8 +347,8 @@ sub setupIntronSeqFile{
         ($TMP, $in) = tempfile("in_seqs_XXXX", UNLINK => 1);
     }
     print $TMP <<EOT
-#unsorted temporary inon sequence file
-#INTRON_ID\tSEQ
+#unsorted temporary intron sequence file
+#COORDS\tINTRON_ID\tSEQ
 EOT
 ;
     return ($TMP, $in);
@@ -326,7 +417,6 @@ sub setupOutput{
 
 #################################################
 sub processIntronGff{
-    my $fai = Bio::DB::Sam::Fai->load($opts{f});#should create index if it doesn't exist
     my $gff = Bio::Tools::GFF->new
     (
         -gff_version => 3,
@@ -418,21 +508,26 @@ sub parseIntrons{
     my $fai = shift;
     my %all = ();
     foreach my $intr (@$in){
-        my ($next)     = $intr->get_tag_values('next_exon_id');
-        my ($previous) = $intr->get_tag_values('previous_exon_id');
-        my ($type)     = $intr->get_tag_values('intron_type'); 
+        my ($previous_start) = $intr->get_tag_values('previous_exon_start');
+        my ($previous_end)   = $intr->get_tag_values('previous_exon_end');
+        my ($next_start)     = $intr->get_tag_values('next_exon_start');
+        my ($next_end)       = $intr->get_tag_values('next_exon_end');
+        my $previous         = $intr->seq_id . ":" . $previous_start . "-" . $previous_end;
+        my $next             = $intr->seq_id . ":" . $next_start . "-" . $next_end;
+        my ($type)           = $intr->get_tag_values('intron_type'); 
+        my $intron_coords    = $intr->seq_id . ":" . $intr->start . "-" . $intr->end;
         if ($type =~ /U12$/){
             $u12_exons{$next}     = $type;
             $u12_exons{$previous} = $type;
-            $u12_introns{"$next-$previous"} = $type;
+            $u12_introns{$intron_coords} = $type;
         }elsif($type =~ /U2$/){
             $u2_exons{$next}     = $type;
             $u2_exons{$previous} = $type;
-            $u2_introns{"$next-$previous"} = $type;
+            $u2_introns{$intron_coords} = $type;
         }else{
             $unknown_exons{$next}     = $type;
             $unknown_exons{$previous} = $type;
-            $unknown_introns{"$next-$previous"} = $type;
+            $unknown_introns{$intron_coords} = $type;
         }
         writeTempIntronSequence($intr, $fai, $next, $previous);
         $$count++;
@@ -648,18 +743,19 @@ sub writeTempIntronSequence{
     my $fai = shift;
     my $next_ex = shift;
     my $prev_ex = shift;
-    my $id = "$next_ex-$prev_ex";
-    return if exists $intron_seqs{$id};
+    my $id = "$prev_ex-$next_ex";
     my $chrom = $intron->seq_id; 
     my $strand = $intron->strand;
     my $start = $intron->start;
     my $end = $intron->end;
-    my $seq = $fai->fetch("$chrom:$start-$end");
+    my $coord = "$chrom:$start-$end";
+    return if exists $intron_seqs{$coord};
+    my $seq = $fai->fetch($coord);
     if ($strand < 0){
         $seq = reverse_complement($seq);
     }
-    print $TMPIN "$id\t$seq\n";
-    $intron_seqs{$id} = undef;
+    print $TMPIN "$coord\t$id\t$seq\n";
+    $intron_seqs{$coord} = undef;
 }
 
 #################################################
@@ -668,17 +764,18 @@ sub writeTempExonSequence{
     my $exon = shift;
     my $fai = shift;
     my ($id) = $exon->get_tag_values('exon_id');
-    return if exists $exon_seqs{$id};
     my $chrom = $exon->seq_id; 
     my $strand = $exon->strand;
     my $start = $exon->start;
     my $end = $exon->end;
-    my $seq = $fai->fetch("$chrom:$start-$end");
+    my $coord = "$chrom:$start-$end";
+    return if exists $exon_seqs{$coord};
+    my $seq = $fai->fetch($coord);
     if ($strand < 0){
         $seq = reverse_complement($seq);
     }
-    print $TMPEX "$id\t$seq\n";
-    $exon_seqs{$id} = undef;
+    print $TMPEX "$coord\t$id\t$seq\n";
+    $exon_seqs{$coord} = undef;
 }
 
 #################################################
@@ -780,6 +877,10 @@ OPTIONS:
     -b,--biotypes STRING
         Only include exons/introns from transcripts of this biotype (e.g. 
         protein_coding)
+   
+     -j,--merge
+        Use this flag to merge overlapping introns/exons before calculating
+        stats.
 
     -s,--tsl INT
         Only include exons/introns from transcripts with this transcript 
