@@ -253,7 +253,30 @@ sub writeIntron{
         -primary_tag => 'intron',
     
     );
-    
+    $intron->add_tag_value
+    (
+        'previous_exon_start',
+        $exon1->start,
+    );
+
+    $intron->add_tag_value
+    (
+        'previous_exon_end',
+        $exon1->end,
+    );
+
+    $intron->add_tag_value
+    (
+        'next_exon_start',
+        $exon2->start,
+    );
+
+    $intron->add_tag_value
+    (
+        'next_exon_end',
+        $exon2->end,
+    );
+
     $intron->add_tag_value
     (
         'Parent',
