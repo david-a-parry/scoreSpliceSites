@@ -521,6 +521,8 @@ sub parseIntrons{
         my ($next_end)       = $intr->get_tag_values('next_exon_end');
         my $previous         = $intr->seq_id . ":" . $previous_start . "-" . $previous_end;
         my $next             = $intr->seq_id . ":" . $next_start . "-" . $next_end;
+        my ($previous_id)    = $intr->get_tag_values('previous_exon_id');
+        my ($next_id)        = $intr->get_tag_values('next_exon_id');
         my ($type)           = $intr->get_tag_values('intron_type'); 
         my $intron_coords    = $intr->seq_id . ":" . $intr->start . "-" . $intr->end;
         if ($type =~ /U12$/){
@@ -536,7 +538,7 @@ sub parseIntrons{
             $unknown_exons{$previous} = $type;
             $unknown_introns{$intron_coords} = $type;
         }
-        writeTempIntronSequence($intr, $fai, $next, $previous);
+        writeTempIntronSequence($intr, $fai, $next_id, $previous_id);
         $$count++;
         reportProgress($$count);
     }
