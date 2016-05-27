@@ -270,9 +270,10 @@ sub sortSeqs{
         next if $line =~ /^#/;
         my @split = split("\t", $line); 
         my ($chrom, $start, $end) = split(/[:-]/, $split[0]);
+        my $s_chrom = sprintf("%-25s", $chrom); 
         my $packstart = pack("N", $start); 
         my $packend = pack("N", $end); 
-        push @feeds, "$chrom,$packstart,$packend,$line";
+        push @feeds, "$s_chrom,$packstart,$packend,$line";
         $n++;
         if (@feeds > 9999){
             $sortex->feed(@feeds);
@@ -294,7 +295,7 @@ EOT
 ;
     $n = 0;
     while ( defined( $_ = $sortex->fetch ) ) {
-        print $SORTOUT substr($_, 15,);
+        print $SORTOUT substr($_, 36,);
         $n++;
         if (not $n % 100000){
             $time = strftime( "%H:%M:%S", localtime );
