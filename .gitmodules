@@ -1,0 +1,3 @@
+[submodule "lib/dapPerlGenomicLib"]
+	path = lib/dapPerlGenomicLib
+	url = https://github.com/gantzgraf/dapPerlGenomicLib.git
