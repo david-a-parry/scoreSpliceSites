@@ -456,14 +456,10 @@ sub writeScores{
 #            strand   => $prev->{strand},
 #            id       => $prev->{id},
 #            fh       => $FH,
-    my $chr = $args{chrom};
-    if ($chr !~ /^chr/){
-        $chr = "chr$args{chrom}";
-    }
     my $coord = $args{chrom} . ":" . $args{start} . "-" . $args{end};
     my $gmean = getScoreMean
     (
-        -seq_id => $chr,
+        -seq_id => $args{chrom},
         -start  => $args{start},
         -end    => $args{end},
     );
@@ -484,35 +480,35 @@ sub writeScores{
         @acceptor50 = sort {$a <=> $b } @acceptor50;
         my $donor_mean = getScoreMean
         (
-            -seq_id => $chr,
+            -seq_id => $args{chrom},
             -start  => $donor[0],
             -end    => $donor[1],
         );
         
         my $acceptor_mean = getScoreMean
         (
-            -seq_id => $chr,
+            -seq_id => $args{chrom},
             -start  => $acceptor[0],
             -end    => $acceptor[1],
         );
         
         my $donor50_mean = getScoreMean
         (
-            -seq_id => $chr,
+            -seq_id => $args{chrom},
             -start  => $donor50[0],
             -end    => $donor50[1],
         );
         
         my $acceptor50_mean = getScoreMean
         (
-            -seq_id => $chr,
+            -seq_id => $args{chrom},
             -start  => $acceptor50[0],
             -end    => $acceptor50[1],
         );
 
         my $non_flanking_mean = getScoreMean
         (
-            -seq_id => $chr,
+            -seq_id => $args{chrom},
             -start  => $args{start} + 50,
             -end    => $args{end} - 50,
         );
