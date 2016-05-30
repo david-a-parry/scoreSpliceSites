@@ -30,8 +30,8 @@ for (i in 1:2){
   print("U2 %GC")
   print (summary(u2[, "PERCENT_GC"]) )
   print ( wilcox.test(u2[, "PERCENT_GC"], u12[, "PERCENT_GC"]) )
-  png(paste(args[3], paste(type, "GCpercentBoxplot.png", sep=""), sep="/"))
-  boxplot(u2[, "PERCENT_GC"], u12[, "PERCENT_GC"], names = c("U2", "U12"))
+  png(paste(args[3], paste(type, "GCpercentBoxplot.png", sep=""), sep="/"), height=800, width=800 )
+  boxplot(u2[, "PERCENT_GC"], u12[, "PERCENT_GC"], names = c("U2", "U12"), col=c( "brown1", "cyan" ))
   title(main = paste(type, "%GC vs Intron Type"), ylab = "%GC")
   for (l in logcats){
     print(paste("U12", l))
@@ -42,8 +42,8 @@ for (i in 1:2){
     # u12log <- log10(u12[, l])
     # print ( t.test(u2log[is.finite(u2log)], u12log[is.finite(u12log)]) )
     print ( wilcox.test(u2[, l], u12[, l]) )
-    png(paste(args[3], paste(type, l, "Boxplot.png", sep=""), sep="/"))
-    boxplot(u2[, l], u12[, l], log='y', names = c("U2", "U12"))
+    png(paste(args[3], paste(type, l, "Boxplot.png", sep=""), sep="/"), height=800, width=800)
+    boxplot(u2[, l], u12[, l], log='y', names = c("U2", "U12"), col=c( "brown1", "cyan" ))
     title(main = paste(type, l, "vs Intron Type"), ylab = paste(l))
     dev.off()
   }
