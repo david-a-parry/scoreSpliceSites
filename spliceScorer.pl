@@ -60,7 +60,7 @@ my $gffwriter = Bio::Tools::GFF->new(
 my $TRANS;
 if ($opts{t}){
     open ($TRANS, ">", "$opts{t}") or die "Could not open $opts{t} for writing: $!\n";
-    print $TRANS "#NAME\tGENE_ID\tTRANSCRIPT_ID\tTRANSCRIPT_BIOTYPE\tTSL\tU12_introns\tU2_introns\tUNKNOWN_introns\n";
+    print $TRANS "NAME\tGENE_ID\tTRANSCRIPT_ID\tTRANSCRIPT_BIOTYPE\tTSL\tU12_introns\tU2_introns\tUNKNOWN_introns\tLENGTH\tSPLICED_LENGTH\n";
 }
 
 my %exons = ();
@@ -94,7 +94,7 @@ while (my $feat = $gff->next_feature() ) {
         my ($tr) = $feat->get_tag_values('ID'); 
         $tr =~ s/transcript://;
         ($transcripts{$tr}->{parent}) = $feat->get_tag_values('Parent');
-
+        $transcripts{$tr}->{length} = 1 + $feat->end - $feat->start;
         if ($feat->has_tag('gene_type')){
             $transcripts{$tr}->{gene_type} = join(",", $feat->get_tag_values('gene_type'));
         }elsif ($feat->has_tag('biotype')){
@@ -186,7 +186,9 @@ sub writeTranscriptCounts{
             $tsl,
             $u12,
             $u2,
-            $unknown
+            $unknown,   
+            $transcripts{$k}->{length},
+            $transcripts{$k}->{spliced_length},
         ) . "\n";
     }
 }
@@ -196,6 +198,7 @@ sub parseExons{
     my $n = 0;
     foreach my $tr (keys %$exons){
         foreach my $ex (sort {$a <=> $b} keys %{$exons->{$tr}}){
+            $transcripts{$tr}->{spliced_length} += 1 + $exons{$tr}->{$ex}->end - $exons{$tr}->{$ex}->start;
             if (exists $exons{$tr}->{$ex-1}){
                 writeIntron
                 (
