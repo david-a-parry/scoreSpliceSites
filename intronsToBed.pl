@@ -460,6 +460,10 @@ sub writeTempIntronRegion{
 sub writeBedLine{
     my %args = @_;
     my $chr = $args{chrom};
+    my $strand = $args{strand};
+    if ($strand ne '+' and $strand ne '-'){
+        $strand = $strand > 0 ? '+' : '-';
+    }
     $args{fh}->print
     (
         (join
@@ -470,7 +474,7 @@ sub writeBedLine{
                 $args{end},
                 "$args{class}/$args{subclass}",
                 "$args{score}",
-                $args{strand},
+                $strand,
             ) . "\n"
         )
     );
