@@ -418,6 +418,7 @@ sub writeTempExonRegion{
         0,
         $strand,
     ) . "\n";
+    $exons{$coord} = undef;
 }
 
 #################################################
