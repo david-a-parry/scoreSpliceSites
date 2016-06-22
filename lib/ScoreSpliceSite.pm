@@ -12,6 +12,7 @@ my %min_scores = ();#min scores for each matrix
 my %max_scores = ();#max scores for each matrix
 my %best_seqs = ();
 my %worst_seqs = ();
+my %pos_by_weight = (); 
 my @species = qw
 (
     10090
@@ -45,7 +46,13 @@ foreach my $s (@species){
                 $max_scores{$s}->{$int}->{$pwm}, 
                 $worst_seqs{$s}->{$int}->{$pwm}, 
                 $best_seqs{$s}->{$int}->{$pwm}, 
-            ) = matrixMinMax($matrices{$s}->{$int}->{$pwm}); 
+            ) = matrixMinMax($matrices{$s}->{$int}->{$pwm});
+ 
+            @{$pos_by_weight{$s}->{$int}->{$pwm}} = _sortPosByWeight
+            (
+                $matrices{$s}->{$int}->{$pwm},
+                $best_seqs{$s}->{$int}->{$pwm},
+            );
         }
 =cut
         if ($int =~ /U12$/){
@@ -180,7 +187,18 @@ sub matrixMinMax{
     }
     return $minscore, $maxscore, $worst, $best;
 }
-        
+ 
+sub _sortPosByWeight{
+    my $m = shift;
+    my $best_seq = shift;
+    my @seq = split("", $best_seq);
+    my %pos_to_score = ();
+    for (my $i = 0; $i < @$m; $i++){
+        $pos_to_score{$i} = $m->[$i]->{$seq[$i]};
+    }
+    return sort { $pos_to_score{$a} <=> $pos_to_score{$b} } keys %pos_to_score;
+}
+       
 sub getIntronTypes{
     return @introns;
 }
@@ -197,7 +215,41 @@ sub getBestSeq{
     my ($type, $site,  $species) = @_;
     return $best_seqs{$species}->{$type}->{$site};
 } 
-    
+ 
+sub getDonorConsensusCoords{
+#for a given intron start site coordinate
+#return the coordinates of the consensus seq start and end
+#strand can be specified as 1 for + strand or -1 for - strand
+#coordinates are returned in coordinate order, not relative to strand
+    my ($intron_start, $strand) = @_;
+    $strand ||= 1;
+    return sort {$a <=> $b} 
+    (
+        ($intron_start - (3 * $strand) ) ,
+        ($intron_start + (10 * $strand) ) ,
+    ); 
+}
+sub getAcceptorConsensusCoords{
+#for a given intron end site coordinate
+#return the coordinates of the consensus seq start and end
+#strand can be specified as 1 for + strand or -1 for - strand
+#coordinates are returned in coordinate order, not relative to strand
+    my ($intron_stop, $strand) = @_;
+    $strand ||= 1;
+    return sort {$a <=> $b} 
+    (
+        ($intron_stop - (13 * $strand)) ,
+        ($intron_stop + (3 * $strand) ) ,
+    );
+}
+
+sub getPosByWeight{
+#returns array ref of consensus seq positions (0-based) in order 
+#of the positions with the greatest weight according to the PWM
+    my ($type, $site,  $species) = @_;
+    return $pos_by_weight{$species}->{$type}->{$site};
+} 
+
 1;
 
 
