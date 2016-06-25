@@ -229,6 +229,7 @@ sub getDonorConsensusCoords{
         ($intron_start + (10 * $strand) ) ,
     ); 
 }
+
 sub getAcceptorConsensusCoords{
 #for a given intron end site coordinate
 #return the coordinates of the consensus seq start and end
@@ -243,6 +244,21 @@ sub getAcceptorConsensusCoords{
     );
 }
 
+sub getBranchRegionCoords{
+#for a given intron end site coordinate
+#return the coordinates of the consensus seq start and end
+#strand can be specified as 1 for + strand or -1 for - strand
+#coordinates are returned in coordinate order, not relative to strand
+    my ($intron_stop, $strand) = @_;
+    $strand ||= 1;
+    return sort {$a <=> $b} 
+    (
+        ($intron_stop - (100 * $strand)) ,
+        ($intron_stop - (8 * $strand) ) ,
+    );
+}
+
+
 sub getPosByWeight{
 #returns array ref of consensus seq positions (0-based) in order 
 #of the positions with the greatest weight according to the PWM
@@ -250,6 +266,99 @@ sub getPosByWeight{
     return $pos_by_weight{$species}->{$type}->{$site};
 } 
 
+sub determineIntronType{
+#requires: 
+#          donor => last 3 bp of exon plus first 10 bp of intron
+#          branch => around the last 100 bp of intron, not including last 8 bp
+#          species => taxonomic code (e.g. 9606 for human)
+#(does not require):
+#          acceptor => last 14bp of intron + 3 of exon
+    my %args = @_;
+    my %scores = ();
+    my %branch_seqs = (); 
+    foreach my $type (@introns){
+        $scores{'D'}->{$type} = score
+        (
+            seq  => $args{donor},
+            type => $type,
+            site => 'D',
+            species => $args{species},
+        );
+#        $scores{'A'}->{$type} = score
+#        (
+#            seq  => $args{acceptor},
+#            type => $type,
+#            site => 'A',
+#            species => $args{species},
+#        );
+        ($scores{'B'}->{$type}, $branch_seqs{$type}) = 
+        scanForBranchPoint
+        (
+            seq  => $args{branch},
+            type => $type,
+            species => $args{species},
+        );
+    }
+    my $u12_b_score;
+    if ($scores{'B'}->{AT_AC_U12} > $scores{'B'}->{GT_AG_U12}){
+        $u12_b_score = $scores{'B'}->{AT_AC_U12};
+    }else{
+        $u12_b_score = $scores{'B'}->{GT_AG_U12};
+    }
+    my $best_u2;
+    my $best_u12;
+    foreach my $type (@introns){
+        if ($type =~ /U12$/){
+            if ($best_u12){
+                 if ($scores{'D'}->{$type} > $scores{'D'}->{$best_u12}){
+                    $best_u12 = $type;
+                 }
+            }else{
+                $best_u12 = $type;
+            }
+        }elsif($type =~ /U2$/){
+            if ($best_u2){
+                 if ($scores{'D'}->{$type} > $scores{'D'}->{$best_u2}){
+                    $best_u2 = $type;
+                 }
+            }else{
+                $best_u2 = $type;
+            }
+        }
+    }
+    
+    return pickU12orU2 
+    (
+        scores    => \%scores,
+        u12branch => $u12_b_score,
+        U12       => $best_u12, 
+        U2        => $best_u2, 
+    );
+}
+
+sub pickU12orU2{
+    my %args = @_;
+    if ($args{scores}->{'D'}->{$args{U12}} < 50 
+        and $args{scores}->{'D'}->{$args{U2}} < 50){
+        #classify anything with both scores below 50 as
+        # UNKNOWN
+        return 0;
+    }
+    if ($args{scores}->{'D'}->{$args{U12}} - 
+        $args{scores}->{'D'}->{$args{U2}} >= 25){
+        #we annotate as U12 if the donor site score is 
+        #at least 25 more than a U2 site
+        return $args{U12};
+    }elsif ($args{scores}->{'D'}->{$args{U12}} - 
+            $args{scores}->{'D'}->{$args{U2}} >= 10){
+        #otherwise if U12 score is at least 10 better we annotate
+        # as U12 if there's a 'good' (score >= 65) branch point
+        if ($args{u12branch} >= 65){
+            return $args{U12};
+        }
+    }
+    return $args{U2};
+}
 1;
 
 
