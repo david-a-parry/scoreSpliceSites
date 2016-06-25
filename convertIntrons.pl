@@ -13,8 +13,8 @@ use lib "$RealBin/lib";
 use ScoreSpliceSite;
 use ReverseComplement qw/ reverse_complement /;
 
-my @mutate_from = qw / AT_AC_U12 GT_AG_U12 / ;
-my @mutate_to   = qw / GT_AG_U2 GC_AG_U2 / ;
+my @mutate_from = ();
+my @mutate_to   = ();
     
 my %opts = 
 (
@@ -92,7 +92,7 @@ while (my $line = <$INTRON_BED>){
     checkScore($donor_seq, $score, $type, $line);
     
     #mutate sequence
-    my ($mutations, $m_seqs) = mutateSpliceSeqs
+    my ($mutations, $m_seqs, $new_type) = mutateSpliceSeqs
     (
         $donor_seq,
         $acceptor_seq,
@@ -102,12 +102,39 @@ while (my $line = <$INTRON_BED>){
     
     #output results
     if (not defined $mutations){
-        print $OUT "$line" . ("\t-" x 3) . "\n";
+        print $OUT "$line" . ("\t-" x 7) . "\n";
     }else{
         print $OUT "$line";
         print $OUT "\tD=$donor_seq|A=$acceptor_seq|B=$branch_seq";
         print $OUT "\t" . join("\|", map { "$_=$m_seqs->{$_}" } qw /D A B/) ;
-        print $OUT "\t" . join("\|", map { "$_=$mutations->{$_}" } qw /D A B/) ;
+        my @mut_strings = ();
+        my $n_mutations = 0; 
+        foreach my $s (qw /D A B/){
+            my @site_mut_strings = ();
+            foreach my $pos (
+              sort { $a <=> $b } keys %{$mutations->{$s}}
+            ){
+                push @site_mut_strings, $pos . $mutations->{$s}->{$pos};
+                $n_mutations++;
+            }
+            push @mut_strings, "$s=" . join(",", @site_mut_strings) ;
+        }
+        my $new_score = ScoreSpliceSite::score
+        (
+            seq  => $m_seqs->{D},
+            type => $new_type,
+            site => 'D',
+            species => $opts{s},
+        );
+        my $old_score = ScoreSpliceSite::score
+        (
+            seq  => $m_seqs->{D},
+            type => $type,
+            site => 'D',
+            species => $opts{s},
+        );
+        print $OUT "\t" . join("\|", @mut_strings);
+        print $OUT "\t" . join("\t", $n_mutations, $new_type, $old_score, $new_score);
         print $OUT "\n";
     }
     $next_update = $progressbar->update($n) if $n >= $next_update;
@@ -168,12 +195,51 @@ sub mutateSpliceSeqs{
         $opts{s},
     );
     foreach my $m (@mutate_to){
+        my ($new_acceptor, $new_flank) = ($acceptor, $flank);
         $mutations{$m} = 
         {
             D => {},
             B => {},
             A => {},
         };
+        #check we have a branch site
+        my ($b_score, $branch) = ScoreSpliceSite::scanForBranchPoint
+        (
+            seq  => $flank,
+            type => $m,
+            species => $opts{s},
+        );
+        my $new_branch = $branch;
+        if ($b_score < 60){
+            ($mutations{$m}->{B}, $new_branch) = mutateToType
+            (
+                site      => 'B',
+                to_type   => $m,
+                seq       => $branch,
+                score     => 60,
+            );
+            #in case of multiple matching branch sequences
+            # replace last occurence of branch sequence - 
+            # i.e. the one closest to splice junction
+            $new_flank =~ s/(.*)$branch/$1$new_branch/; 
+        }
+        my $a_score = ScoreSpliceSite::score
+        (
+            seq  => $acceptor,
+            type => $m,
+            site => 'A',
+            species => $opts{s},
+        );
+        #check we have acceptor site
+        if ($a_score < 60){
+            ($mutations{$m}->{A}, $new_acceptor) = mutateToType
+            (
+                site      => 'A',
+                to_type   => $m,
+                seq       => $acceptor,
+                score     => 60,
+            );
+        }
         my @ideal_mutant_d = split
         (
             //,
@@ -190,28 +256,12 @@ sub mutateSpliceSeqs{
             'D',
             $opts{s},
         );
-        my @ideal_mutant_a = split
-        (
-            //,
-            ScoreSpliceSite::getBestSeq
-            (
-                $m,
-                'A',
-                $opts{s},
-            )
-        );
-        my $mutant_pbw_a = ScoreSpliceSite::getPosByWeight
-        (
-            $m,
-            'A',
-            $opts{s},
-        );
 DPOS:   foreach my $pos (@$mutant_pbw_d){
             #skip for now if same nt at both original and target consensus
             next if $ideal_mutant_d[$pos] eq $ideal_donor[$pos];
             if ($don[$pos] ne $ideal_mutant_d[$pos]){
-                $don[$pos] = $ideal_mutant_d[$pos];
                 $mutations{$m}->{D}->{$pos} = "$don[$pos]>$ideal_mutant_d[$pos]";
+                $don[$pos] = $ideal_mutant_d[$pos];
                 my $new_d_score = ScoreSpliceSite::score
                 (
                     seq  => join("", @don),
@@ -238,43 +288,11 @@ DPOS:   foreach my $pos (@$mutant_pbw_d){
                 }
             }
         }
-        #check we have a branch site
-        my ($b_score, $branch) = ScoreSpliceSite::scanForBranchPoint
-        (
-            seq  => $flank,
-            type => $m,
-            species => $opts{s},
-        );
-        if ($b_score < 60){
-            ($mutations{$m}->{B}, $branch) = mutateToType
-            (
-                site      => 'B',
-                to_type   => $m,
-                seq       => $branch,
-                score     => 60,
-            );
-        }
-        my $a_score = ScoreSpliceSite::score
-        (
-            seq  => $acceptor,
-            type => $m,
-            site => 'A',
-            species => $opts{s},
-        );
-        #check we have acceptor site
-        if ($a_score < 60){
-            ($mutations{$m}->{A}, $acceptor) = mutateToType
-            (
-                site      => 'A',
-                to_type   => $m,
-                seq       => $acceptor,
-                score     => 60,
-            );
-        }
+        
         my $success = intronIsOfType
         (
             donor    => join("", @don), 
-            branch   => $flank,#TODO this is INCORRECT - need to apply mutation to flank
+            branch   => $new_flank,
             type     => $m,
             species  => $opts{s},
         );
@@ -282,16 +300,16 @@ DPOS:   foreach my $pos (@$mutant_pbw_d){
             $mut_seqs{$m} = 
             {
                 D => join("", @don), 
-                B => $branch,
-                A => $acceptor,
+                B => $new_branch,
+                A => $new_acceptor,
             };
         }else{
             delete $mutations{$m};
         }
     }
-    return (undef, undef) if not keys %mutations;
+    return (undef, undef, undef) if not keys %mutations;
     my $mut_type = conversionWithFewestMutations(%mutations);
-    return ($mutations{$mut_type}, $mut_seqs{$mut_type});
+    return ($mutations{$mut_type}, $mut_seqs{$mut_type}, $mut_type);
 }
 
 #################################################
@@ -333,8 +351,8 @@ sub mutateToType{
     foreach my $pos (@$mutant_pbw){
         #skip for now if same nt at both original and target consensus
         if ($seq[$pos] ne $ideal_mutant[$pos]){
-            $seq[$pos] = $ideal_mutant[$pos];
             $mut{$pos} = "$seq[$pos]>$ideal_mutant[$pos]";
+            $seq[$pos] = $ideal_mutant[$pos];
             my $new_score = ScoreSpliceSite::score
             (
                 seq  => join("", @seq),
@@ -420,7 +438,7 @@ sub checkScore{
         site => 'D',
         species => $opts{s},
     );
-    if ($d_score != $score){
+    if (abs($d_score - $score) > 0.01){#comparing floats with differing precision
         die "Score '$score' does not match computed score ($d_score) for donor "
           . "sequence '$d_seq' from line:\n$line\n";
     }
@@ -430,11 +448,15 @@ sub checkScore{
 sub checkArgs{
     usage("ERROR: -i/--intron_bed option is required!\n") if not $opts{i};
     usage("ERROR: -f/--fasta option is required!\n") if not $opts{f};
-    usage("ERROR: -m/--mutate option must have a value!\n") if not @mutate_from;
-    usage("ERROR: -t/--to option must have a value!\n") if not @mutate_to;
 
     if (not grep {$opts{s} eq $_} ScoreSpliceSite::getSpecies){
         die "ERROR: Splice consensus for species '$opts{s}' not available.\n";
+    }
+    if (not @mutate_from){
+        @mutate_from = qw / AT_AC_U12 GT_AG_U12 / ;
+    }
+    if (not @mutate_to){
+        @mutate_to   = qw / GT_AG_U2 GC_AG_U2 / ;
     }
     @mutate_from = map {uc($_)} @mutate_from;
     @mutate_to   = map {uc($_)} @mutate_to;
