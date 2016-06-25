@@ -196,7 +196,7 @@ sub _sortPosByWeight{
     for (my $i = 0; $i < @$m; $i++){
         $pos_to_score{$i} = $m->[$i]->{$seq[$i]};
     }
-    return sort { $pos_to_score{$a} <=> $pos_to_score{$b} } keys %pos_to_score;
+    return sort { $pos_to_score{$b} <=> $pos_to_score{$a} } keys %pos_to_score;
 }
        
 sub getIntronTypes{
