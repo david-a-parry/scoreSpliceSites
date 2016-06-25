@@ -76,6 +76,7 @@ sub setupOutput{
             Class
             Subclass
             MeanScore
+            WithoutFlanking8Score
             Length
         /
     ) . "\n";
@@ -417,6 +418,7 @@ sub writeTempExonRegion{
         0,
         $strand,
     ) . "\n";
+    $exons{$coord} = undef;
 }
 
 #################################################
@@ -533,6 +535,13 @@ sub writeScores{
             ) . "\n"
         );
     }elsif($args{fh} eq $E_OUT){#exon
+        my $non_flanking_mean = getScoreMean
+        (
+            -seq_id => $chr,
+            -start  => $args{start} + 8,
+            -end    => $args{end} - 8,
+        );
+
         $args{fh}->print 
         (join
             (
@@ -543,6 +552,7 @@ sub writeScores{
                 $args{class},
                 $args{subclass},
                 $gmean,
+                $non_flanking_mean,
                 $args{end} - $args{start} + 1,
             ) . "\n"
         );
