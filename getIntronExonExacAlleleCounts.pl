@@ -5,25 +5,30 @@ use Data::Dumper;
 use Getopt::Long;
 use POSIX qw/strftime/;
 use File::Temp qw/ tempfile /;
+use List::Util qw /sum /;
 use Sort::External;
 use Bio::Tools::GFF;
 use FindBin qw($RealBin);
-use Bio::DB::BigWig 'binMean';
+use Bio::DB::HTS::Tabix;
+use lib "$RealBin/lib/dapPerlGenomicLib";
+use VcfReader;
 
 my %opts = ();
 GetOptions(
     \%opts,
     'g|gff=s',
+    'e|exac_vcf=s',
+    'c|coverage_dir=s',
     'b|biotype=s',
     's|tsl=i',
     'j|merge',
     'o|output=s',
-    'w|bigwig=s',
     'h|?|help',
 ) or usage("Error getting options!");
 usage() if $opts{h};
 usage("-g/--gff option is required!\n") if not $opts{g};
-usage("-w/--bigwig option is required!\n") if not $opts{w};
+usage("-e/--exac_vcf option is required!\n") if not $opts{e};
+usage("-c/--coverage_dir option is required!\n") if not $opts{c};
 usage("-o/--output argument is required.") if not $opts{o};
 
 my $IN;
@@ -32,10 +37,9 @@ if ($opts{g} =~ /\.gz$/){
 }else{
     open ($IN, "<", $opts{g}) or die "Can't open $opts{g} for reading: $!\n";
 }
-my $wig  = Bio::DB::BigWig->new
-(
-    -bigwig => $opts{w},
-);
+
+my %search_args = VcfReader::getSearchArguments( $opts{e});
+my %cov_iters = ();
 
 my %exons = ();
 my %introns = ();
@@ -62,8 +66,8 @@ outputIntronStats();
 
 #################################################
 sub setupOutput{
-    my $ex = "$opts{o}_exon_cons_score.tsv";
-    my $in = "$opts{o}_intron_cons_score.tsv";
+    my $ex = "$opts{o}_exon_exac_freqs.tsv";
+    my $in = "$opts{o}_intron_exac_freqs.tsv";
     open (my $EX, ">", "$ex") or die "Can't open $ex for writing: $!\n";    
     open (my $IN, ">", "$in") or die "Can't open $in for writing: $!\n";    
     print $EX join
@@ -75,8 +79,10 @@ sub setupOutput{
             ID
             Class
             Subclass
-            MeanScore
-            WithoutFlanking8Score
+            AN
+            AC
+            AF
+            MeanCoverage
             Length
         /
     ) . "\n";
@@ -89,12 +95,14 @@ sub setupOutput{
             ID
             Class
             Subclass
-            MeanScore
-            DonorConsensusScore
-            AcceptorConsensusScore
-            DonorFlanking50Score
-            AcceptorFlanking50Score
-            WithoutFlanking50Score
+            DonorConsensusAN
+            DonorConsensusAC
+            DonorConsensusAF
+            DonorConsensusMeanCoverage
+            AcceptorConsensusAN
+            AcceptorConsensusAC
+            AcceptorConsensusAF
+            AcceptorConsensusMeanCoverage
             Length
         /
     ) . "\n";
@@ -418,7 +426,6 @@ sub writeTempExonRegion{
         0,
         $strand,
     ) . "\n";
-    $exons{$coord} = undef;
 }
 
 #################################################
@@ -459,62 +466,29 @@ sub writeScores{
 #            id       => $prev->{id},
 #            fh       => $FH,
     my $coord = $args{chrom} . ":" . $args{start} . "-" . $args{end};
-    my $gmean = getScoreMean
-    (
-        -seq_id => $args{chrom},
-        -start  => $args{start},
-        -end    => $args{end},
-    );
     if ($args{fh} eq $I_OUT){#intron 
         #get scores for splice consensus sequences
-        my (@donor, @acceptor, @acceptor50, @donor50); 
+        my (@donor, @acceptor);
         push @donor, $args{strand} > 0 ? $args{start} - 3  : $args{end} + 3;
         push @donor, $args{strand} > 0 ? $args{start} + 10 : $args{end} - 10;
         push @acceptor, $args{strand} > 0 ? $args{end} - 13 : $args{start} + 13;
         push @acceptor, $args{strand} > 0 ? $args{end} + 3  : $args{start} - 3;
-        push @acceptor50, $args{strand} > 0 ? $args{end} - 50 : $args{start} + 50;
-        push @acceptor50, $args{strand} > 0 ? $args{end} : $args{start} ;
-        push @donor50, $args{strand} > 0 ? $args{start} + 50 : $args{end} - 50;
-        push @donor50, $args{strand} > 0 ? $args{start} : $args{end} - 50;
         @donor      = sort {$a <=> $b } @donor;
         @acceptor   = sort {$a <=> $b } @acceptor;
-        @donor50    = sort {$a <=> $b } @donor50;
-        @acceptor50 = sort {$a <=> $b } @acceptor50;
-        my $donor_mean = getScoreMean
+        my %donor_af = getAfs
         (
-            -seq_id => $args{chrom},
-            -start  => $donor[0],
-            -end    => $donor[1],
+            chrom => $args{chrom},
+            start => $donor[0],
+            end   => $donor[1],
         );
         
-        my $acceptor_mean = getScoreMean
+        my %acceptor_af = getAfs
         (
-            -seq_id => $args{chrom},
-            -start  => $acceptor[0],
-            -end    => $acceptor[1],
+            chrom => $args{chrom},
+            start => $acceptor[0],
+            end   => $acceptor[1],
         );
         
-        my $donor50_mean = getScoreMean
-        (
-            -seq_id => $args{chrom},
-            -start  => $donor50[0],
-            -end    => $donor50[1],
-        );
-        
-        my $acceptor50_mean = getScoreMean
-        (
-            -seq_id => $args{chrom},
-            -start  => $acceptor50[0],
-            -end    => $acceptor50[1],
-        );
-
-        my $non_flanking_mean = getScoreMean
-        (
-            -seq_id => $args{chrom},
-            -start  => $args{start} + 50,
-            -end    => $args{end} - 50,
-        );
-
         $args{fh}->print
         (
             join
@@ -525,23 +499,24 @@ sub writeScores{
                 $args{id},
                 $args{class},
                 $args{subclass},
-                $gmean,
-                $donor_mean,
-                $acceptor_mean,
-                $donor50_mean,
-                $acceptor50_mean,
-                $non_flanking_mean,
+                $donor_af{an},
+                $donor_af{ac},
+                $donor_af{af},
+                $donor_af{coverage},
+                $acceptor_af{an},
+                $acceptor_af{ac},
+                $acceptor_af{af},
+                $acceptor_af{coverage},
                 $args{end} - $args{start} + 1,
             ) . "\n"
         );
     }elsif($args{fh} eq $E_OUT){#exon
-        my $non_flanking_mean = getScoreMean
+        my %exon_af = getAfs
         (
-            -seq_id => $chr,
-            -start  => $args{start} + 8,
-            -end    => $args{end} - 8,
+            chrom => $args{chrom},
+            start => $args{start},
+            end   => $args{end},
         );
-
         $args{fh}->print 
         (join
             (
@@ -551,8 +526,10 @@ sub writeScores{
                 $args{id},
                 $args{class},
                 $args{subclass},
-                $gmean,
-                $non_flanking_mean,
+                $exon_af{an},
+                $exon_af{ac},
+                $exon_af{af},
+                $exon_af{coverage},
                 $args{end} - $args{start} + 1,
             ) . "\n"
         );
@@ -603,15 +580,61 @@ sub collectIntrons{
     @$in = (); 
 }
 #################################################
-sub getScoreMean{
+sub getAfs{
     my %args = @_;
-    my @score = $wig->features(%args, -type => 'summary');
-    my $mean = 'NA';
-    eval{
-        $mean =  binMean( $score[0]->statistical_summary->[0] );
-    };
-    return $mean;
+    my %results = ();
+    $args{chrom} =~ s/^chr//;#ExAC on v37 without chr 
+    my @hits = VcfReader::searchByRegion
+    (
+        %search_args,
+        %args,
+    );
+    foreach my $h (@hits){ 
+        my @splt = split("\t", $h);
+        my $an = VcfReader::getVariantInfoField(\@splt, "AN");
+        my $ac = VcfReader::getVariantInfoField(\@splt, "AC");
+        my @acs = split(",", $ac);
+        $results{an} += $an;
+        $results{ac} += sum(@acs);
+    }
+    if ($results{an}){
+        $results{af} = $results{ac}/$results{an};
+    }
+    foreach my $k (qw /an ac af /){
+        if (not defined $results{$k}){
+            $results{$k} = 0;
+        }
+    }
+    $results{coverage} = getCoverage(%args);
+    return %results;
 }
+
+#################################################
+sub getCoverage{
+    my %args = @_;
+    $args{chrom} =~ s/^chr//;#ExAC on v37 without chr 
+    my $cov_file = "$opts{c}/Panel.chr$args{chrom}.coverage.txt.gz";
+    if (not -e $cov_file){
+        die "Could not find coverage file for $args{chrom} - '$cov_file'\n";
+    }
+    if (not exists $cov_iters{$cov_file}){
+        $cov_iters{$cov_file} = Bio::DB::HTS::Tabix->new(filename =>  $cov_file);
+    }
+    my $it = $cov_iters{$cov_file}->query
+    (
+        "$args{chrom}:$args{start}-" . (1 + $args{end})
+    );
+    my $total_mean = 0;
+    my $n = 0;
+    while (my $result = $it->next){
+        $n++;
+        chomp($result);
+        my (undef, undef, $mean) = split("\t", $result);
+        $total_mean += $mean;
+    }
+    return $n ? $total_mean/$n : 0;
+}
+
 
 #################################################
 sub reportProgress{
@@ -633,19 +656,23 @@ sub usage{
 
 DESCRIPTION: Prints scores for introns and exons from a GFF file generated by spliceScorer.pl
 
-USAGE: $0 -g introns.gff3 -w genomeBigwigFile.bw -o output_prefix
+USAGE: $0 -g introns.gff3 -e exac_vcf -c exac_coverage/ -o output_prefix
 
 OPTIONS:
     
     -g,--gff FILE
         GFF3 intron file created by spliceScorer.pl
 
-    -w,--bigwig
-        Genome bigwig file containing GERP, phylop or phastcons scores
+    -e,--exac_vcf
+        VCF of ExAC variants.
+
+    -c,--coverage_dir
+        Directory of coverage data from ExAC (as downloaded from 
+        ftp.broadinstitute.org/pub/ExAC_release/release0.3.1/coverage).
 
     -o,--output FILE
         Output file prefix. Two output files will be produced - one with the 
-        suffix 'intron_stats.tsv' the other with the suffix 'exon_stats.tsv'.
+        suffix 'intron_exac_freqs.tsv' the other with the suffix 'exon_exac_freqs.tsv'.
     
     -b,--biotypes STRING
         Only include exons/introns from transcripts of this biotype (e.g. 

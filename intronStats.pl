@@ -91,6 +91,7 @@ sub outputIntronStats{
     my $n = 0;
     my %prev_intron;
     while (my $line = <$IN>){
+        next if $line =~ /^#/;
         my ($coord, $id, $seq) = split("\t", $line); 
         my ($class, $subclass);
         if (exists $u12_introns{$coord}){
@@ -191,6 +192,7 @@ sub outputExonStats{
     my $n = 0; 
     my %prev_exon;
     while (my $line = <$EX>){
+        next if $line =~ /^#/;
         my ($coord, $id, $seq) = split("\t", $line); 
         my ($class, $subclass);
         if (exists $u12_exons{$coord}){
