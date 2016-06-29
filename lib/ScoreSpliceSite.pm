@@ -271,11 +271,13 @@ sub determineIntronType{
 #          donor => last 3 bp of exon plus first 10 bp of intron
 #          branch => around the last 100 bp of intron, not including last 8 bp
 #          species => taxonomic code (e.g. 9606 for human)
-#(does not require):
 #          acceptor => last 14bp of intron + 3 of exon
     my %args = @_;
     my %scores = ();
     my %branch_seqs = (); 
+    my $d_term = substr($args{donor}, 3, 2);
+    my $a_term = substr($args{acceptor}, 12, 2);
+    my $term_type = $d_term . "_" . $a_term; #e.g. GT_AG
     foreach my $type (@introns){
         $scores{'D'}->{$type} = score
         (
@@ -284,13 +286,13 @@ sub determineIntronType{
             site => 'D',
             species => $args{species},
         );
-#        $scores{'A'}->{$type} = score
-#        (
-#            seq  => $args{acceptor},
-#            type => $type,
-#            site => 'A',
-#            species => $args{species},
-#        );
+        $scores{'A'}->{$type} = score
+        (
+            seq  => $args{acceptor},
+            type => $type,
+            site => 'A',
+            species => $args{species},
+        );
         ($scores{'B'}->{$type}, $branch_seqs{$type}) = 
         scanForBranchPoint
         (
@@ -310,7 +312,9 @@ sub determineIntronType{
     foreach my $type (@introns){
         if ($type =~ /U12$/){
             if ($best_u12){
-                 if ($scores{'D'}->{$type} > $scores{'D'}->{$best_u12}){
+                 if ($scores{'D'}->{$type} > $scores{'D'}->{$best_u12} and 
+                     $scores{'A'}->{$type} > 50
+                 ){
                     $best_u12 = $type;
                  }
             }else{
@@ -318,7 +322,9 @@ sub determineIntronType{
             }
         }elsif($type =~ /U2$/){
             if ($best_u2){
-                 if ($scores{'D'}->{$type} > $scores{'D'}->{$best_u2}){
+                 if ($scores{'D'}->{$type} > $scores{'D'}->{$best_u2} and 
+                     $scores{'A'}->{$type} > 50
+                 ){
                     $best_u2 = $type;
                  }
             }else{
@@ -327,13 +333,26 @@ sub determineIntronType{
         }
     }
     
-    return pickU12orU2 
+    my $pick = pickU12orU2 
     (
         scores    => \%scores,
         u12branch => $u12_b_score,
         U12       => $best_u12, 
         U2        => $best_u2, 
     );
+    return 0 if not $pick;
+    if ($pick =~ /^$term_type(_U12|_U2)$/){
+        return $pick;
+    }else{
+        if ($scores{'D'}->{$pick} > 60){
+            if ($pick =~ /(_U1*2)$/){
+                return "NonCanon_$term_type$1";
+            }else{
+                carp "Could not parse intron type '$pick' ";
+            }
+        }
+        return 0;
+    }
 }
 
 sub pickU12orU2{
@@ -345,19 +364,29 @@ sub pickU12orU2{
         return 0;
     }
     if ($args{scores}->{'D'}->{$args{U12}} - 
-        $args{scores}->{'D'}->{$args{U2}} >= 25){
+        $args{scores}->{'D'}->{$args{U2}} >= 25 and 
+        $args{scores}->{'A'}->{$args{U12}} > 60
+    ){
         #we annotate as U12 if the donor site score is 
-        #at least 25 more than a U2 site
+        #at least 25 more than a U2 site and acceptor site is above 60
         return $args{U12};
     }elsif ($args{scores}->{'D'}->{$args{U12}} - 
-            $args{scores}->{'D'}->{$args{U2}} >= 10){
+            $args{scores}->{'D'}->{$args{U2}} >= 10 and
+            $args{scores}->{'A'}->{$args{U12}} > 60
+    ){
         #otherwise if U12 score is at least 10 better we annotate
         # as U12 if there's a 'good' (score >= 65) branch point
+        #and acceptor site is above 60
         if ($args{u12branch} >= 65){
             return $args{U12};
         }
     }
-    return $args{U2};
+
+    if ($args{scores}->{'A'}->{$args{U2}} > 50){
+        return $args{U2};
+    }else{
+        return 0;
+    }
 }
 1;
 
