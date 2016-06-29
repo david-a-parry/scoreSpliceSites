@@ -160,7 +160,8 @@ if ($TRANS){
 #################################################
 sub writeTranscriptCounts{
     foreach my $k (sort keys %transcripts){
-        my ($unknown, $u2, $u12, $gene, $gene_type, $tsl) = (0, 0, 0, '.', '.', '.'); 
+        my ($unknown, $u2, $u12, $gene, $gene_type, $tsl, $length, $spliced_length) 
+        =  (0, 0, 0, '.', '.', '.', 0, 0); 
         foreach my $type (keys %{$transcripts{$k}}){
             if ($type eq 'parent'){
                 ($gene = $transcripts{$k}->{$type}) =~ s/^gene://;
@@ -168,6 +169,10 @@ sub writeTranscriptCounts{
                 $gene_type = $transcripts{$k}->{$type};
             }elsif($type eq 'tsl'){
                 $tsl = $transcripts{$k}->{$type};
+            }elsif($type eq 'length'){
+                $length = $transcripts{$k}->{$type};
+            }elsif($type eq 'splice_length'){
+                $spliced_length = $transcripts{$k}->{$type};
             }elsif($type eq '0'){
                 $unknown += $transcripts{$k}->{$type};
             }elsif($type =~ /U12$/){
@@ -187,8 +192,8 @@ sub writeTranscriptCounts{
             $u12,
             $u2,
             $unknown,   
-            $transcripts{$k}->{length},
-            $transcripts{$k}->{spliced_length},
+            $length,
+            $spliced_length,
         ) . "\n";
     }
 }
@@ -404,33 +409,16 @@ sub writeIntron{
             sprintf("%.2f", $scores{'A'}->{$type}),
         );
 
-        if ($type =~ /U12$/){
-            if ($best_u12){
-                 if ($scores{'D'}->{$type} > $scores{'D'}->{$best_u12}){
-                    $best_u12 = $type;
-                 }
-            }else{
-                $best_u12 = $type;
-            }
-        }elsif($type =~ /U2$/){
-            if ($best_u2){
-                 if ($scores{'D'}->{$type} > $scores{'D'}->{$best_u2}){
-                    $best_u2 = $type;
-                 }
-            }else{
-                $best_u2 = $type;
-            }
-        }
     }
     
 
-    my $intron_type =pickU12orU2 
+    my $intron_type = ScoreSpliceSite::determineIntronType
     (
-        scores    => \%scores,
-        u12branch => $u12_b_score,
-        U12       => $best_u12, 
-        U2        => $best_u2, 
-    );
+            donor    => $donor,
+            acceptor => $acceptor,
+            branch   => $branch,
+            species  => $opts{s},
+    ); 
 
     $intron->add_tag_value("intron_type", $intron_type); 
     $gffwriter->write_feature($intron);
@@ -444,33 +432,6 @@ sub writeIntron{
     }else{
         $intron_counts{unknown}++;
     }
-}
-
-#################################################
-sub pickU12orU2{
-    my %args = @_;
-    if ($args{scores}->{'D'}->{$args{U12}} < 50 
-        and $args{scores}->{'D'}->{$args{U2}} < 50){
-        #classify anything with both scores below 50 as
-        # UNKNOWN
-        return 0;
-    }
-    if ($args{scores}->{'D'}->{$args{U12}} - 
-        $args{scores}->{'D'}->{$args{U2}} 
-        >= 25){
-        #we annotate as U12 if the donor site score is 
-        #at least 25 more than a U2 site
-        return $args{U12};
-    }elsif ($args{scores}->{'D'}->{$args{U12}} - 
-            $args{scores}->{'D'}->{$args{U2}} 
-            >= 10){
-        #otherwise if U12 score is at least 10 better we annotate
-        # as U12 if there's a 'good' (score >= 65) branch point
-        if ($args{u12branch} >= 65){
-            return $args{U12};
-        }
-    }    
-    return $args{U2};
 }
 
 #################################################
