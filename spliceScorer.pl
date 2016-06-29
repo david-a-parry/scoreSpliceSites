@@ -171,7 +171,7 @@ sub writeTranscriptCounts{
                 $tsl = $transcripts{$k}->{$type};
             }elsif($type eq 'length'){
                 $length = $transcripts{$k}->{$type};
-            }elsif($type eq 'splice_length'){
+            }elsif($type eq 'spliced_length'){
                 $spliced_length = $transcripts{$k}->{$type};
             }elsif($type eq '0'){
                 $unknown += $transcripts{$k}->{$type};
