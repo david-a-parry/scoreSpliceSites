@@ -122,7 +122,7 @@ sub outputExons{
             $n++;
             if (not $n % 10000){
                 my $time = strftime( "%H:%M:%S", localtime );
-                print STDERR "[$time] Wrote scores for $n exons...\n" ;
+                print STDERR "[$time] Wrote $n exons...\n" ;
             }
         }
     }
@@ -139,7 +139,7 @@ sub outputExons{
         fh       => $prev_exon{fh},
     ) if %prev_exon;
     my $time = strftime( "%H:%M:%S", localtime );
-    print STDERR "[$time] Finished writing scores for $n exons.\n";
+    print STDERR "[$time] Finished writing $n exons.\n";
     close $EX;
 }
 
@@ -194,7 +194,7 @@ sub outputIntrons{
             $n++;
             if (not $n % 10000){
                 my $time = strftime( "%H:%M:%S", localtime );
-                print STDERR "[$time] Processed scores for $n introns...\n" ;
+                print STDERR "[$time] Processed $n introns...\n" ;
             }
         }
     }
@@ -211,7 +211,7 @@ sub outputIntrons{
         fh       => $prev_intron{fh},
     ) if (%prev_intron);
     my $time = strftime( "%H:%M:%S", localtime );
-    print STDERR "[$time] Finished writing scores for $n introns.\n";
+    print STDERR "[$time] Finished writing $n introns.\n";
     close $IN;
 }
 
