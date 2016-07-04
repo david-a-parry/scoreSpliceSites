@@ -537,7 +537,7 @@ sub writeScores{
     }elsif($args{fh} eq $E_OUT){#exon
         my $non_flanking_mean = getScoreMean
         (
-            -seq_id => $chr,
+            -seq_id => $args{chrom},
             -start  => $args{start} + 8,
             -end    => $args{end} - 8,
         );
