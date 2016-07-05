@@ -292,6 +292,7 @@ DPOS:   foreach my $pos (@$mutant_pbw_d){
         my $success = intronIsOfType
         (
             donor    => join("", @don), 
+            acceptor => $new_acceptor,
             branch   => $new_flank,
             type     => $m,
             species  => $opts{s},
